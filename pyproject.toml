@@ -1,0 +1,10 @@
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+
+[tool.ruff.lint.per-file-ignores]
+# seed_venues.py contains long verbatim data strings (URLs, notes, lot names)
+# that cannot be meaningfully wrapped without changing the source data.
+"app/seed_venues.py" = ["E501"]
