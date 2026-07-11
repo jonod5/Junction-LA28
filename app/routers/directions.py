@@ -1,0 +1,142 @@
+"""
+GET /api/directions — server-side proxy to Google Directions API.
+
+Design choices:
+- The GOOGLE_MAPS_KEY never leaves the server; the frontend calls this proxy
+  instead of Google directly.  This also lets us add rate-limiting and caching
+  in one place without any client changes.
+- We return only {distance_m, duration_s, polyline} — exactly what the Leg
+  model needs.  Stripping the full Google response reduces payload size and
+  avoids exposing billing-sensitive fields.
+- Redis cache with a 1-hour TTL covers the common case of a user toggling
+  between modes on the same stop pair.  Directions between fixed venue pairs
+  are extremely stable; 1 h is safe.
+- Cache key encodes origin, destination, and mode so different modes never
+  collide.  Coordinates are rounded to 5 decimal places (~1 m precision)
+  before hashing to prevent trivially different float representations from
+  busting the cache.
+- A 502 (not 500) is returned when Google is unreachable — the client is the
+  upstream from the browser's perspective, and 502 is semantically correct for
+  a bad gateway response.
+- ZERO_RESULTS (no route found) returns 404 with a clear message rather than
+  an empty 200, so the frontend can show a useful error state.
+"""
+
+import hashlib
+import json
+import logging
+import os
+from enum import StrEnum
+
+import httpx
+import redis as redis_lib
+from fastapi import APIRouter, HTTPException, Query
+
+log = logging.getLogger(__name__)
+router = APIRouter(tags=["directions"])
+
+DIRECTIONS_URL = "https://maps.googleapis.com/maps/api/directions/json"
+CACHE_TTL = 3600  # 1 hour — venue-to-venue routes are stable
+
+
+class TravelMode(StrEnum):
+    driving = "driving"
+    transit = "transit"
+    walking = "walking"
+    bicycling = "bicycling"
+
+
+def _get_redis() -> redis_lib.Redis:
+    # Reuse the same connection pattern as gtfs_rt.py.
+    url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+    return redis_lib.from_url(url, decode_responses=True)
+
+
+def _cache_key(origin: str, destination: str, mode: str) -> str:
+    # Round coordinates to 5 dp to collapse trivially different floats.
+    def _norm(coord: str) -> str:
+        parts = coord.split(",")
+        if len(parts) == 2:
+            try:
+                return f"{float(parts[0]):.5f},{float(parts[1]):.5f}"
+            except ValueError:
+                pass
+        return coord
+
+    raw = f"directions:{_norm(origin)}:{_norm(destination)}:{mode}"
+    # Hash to cap key length and avoid special characters.
+    return "dir:" + hashlib.md5(raw.encode()).hexdigest()  # noqa: S324 — not crypto
+
+
+@router.get("/api/directions")
+def get_directions(
+    origin: str = Query(..., description="lat,lng of the start point"),
+    destination: str = Query(..., description="lat,lng of the end point"),
+    mode: TravelMode = Query(TravelMode.transit, description="Travel mode"),
+):
+    """
+    Proxy Google Directions and return trimmed routing data.
+
+    Returns: {distance_m, duration_s, polyline, mode}
+    Caches results in Redis for 1 hour.
+    """
+    api_key = os.environ.get("GOOGLE_MAPS_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="Maps API key not configured")
+
+    cache_key = _cache_key(origin, destination, str(mode))
+    r = _get_redis()
+
+    # ── Cache hit ─────────────────────────────────────────────────────────────
+    cached = r.get(cache_key)
+    if cached:
+        log.debug("Directions cache hit: %s", cache_key)
+        return json.loads(cached)
+
+    # ── Upstream call ─────────────────────────────────────────────────────────
+    params = {
+        "origin": origin,
+        "destination": destination,
+        "mode": str(mode),
+        "key": api_key,
+    }
+    try:
+        with httpx.Client(timeout=10) as client:
+            resp = client.get(DIRECTIONS_URL, params=params)
+            resp.raise_for_status()
+    except httpx.HTTPError as exc:
+        log.exception("Directions API request failed: %s", exc)
+        raise HTTPException(status_code=502, detail="Directions API unavailable") from exc
+
+    data = resp.json()
+    status = data.get("status")
+
+    if status == "ZERO_RESULTS":
+        raise HTTPException(
+            status_code=404,
+            detail=f"No {mode} route found between the given points",
+        )
+
+    if status != "OK":
+        log.error("Directions API error status: %s", status)
+        raise HTTPException(status_code=502, detail=f"Directions API error: {status}")
+
+    # ── Trim response ─────────────────────────────────────────────────────────
+    try:
+        leg = data["routes"][0]["legs"][0]
+        result = {
+            "mode": str(mode),
+            "distance_m": leg["distance"]["value"],
+            "duration_s": leg["duration"]["value"],
+            # overview_polyline covers the full route in one encoded string —
+            # efficient to transfer and decoded by the map SDK client-side.
+            "polyline": data["routes"][0]["overview_polyline"]["points"],
+        }
+    except (KeyError, IndexError) as exc:
+        log.exception("Unexpected Directions API response shape: %s", exc)
+        raise HTTPException(status_code=502, detail="Unexpected Directions API response") from exc
+
+    # ── Cache and return ──────────────────────────────────────────────────────
+    r.setex(cache_key, CACHE_TTL, json.dumps(result))
+    log.debug("Directions cached for %ds: %s→%s [%s]", CACHE_TTL, origin, destination, mode)
+    return result

@@ -18,7 +18,7 @@ from fastapi import FastAPI
 from sqlalchemy import text
 
 from app.db import engine
-from app.routers import places, vehicles
+from app.routers import directions, places, trips, vehicles, venues
 
 log = logging.getLogger(__name__)
 
@@ -60,6 +60,9 @@ app = FastAPI(
 
 app.include_router(vehicles.router)
 app.include_router(places.router)
+app.include_router(trips.router)
+app.include_router(directions.router)
+app.include_router(venues.router)
 
 
 @app.get("/health")
