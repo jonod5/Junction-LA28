@@ -26,6 +26,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 from enum import StrEnum
 
 import httpx
@@ -68,6 +69,39 @@ def _cache_key(origin: str, destination: str, mode: str) -> str:
     return "dir:" + hashlib.md5(raw.encode()).hexdigest()  # noqa: S324 — not crypto
 
 
+def _strip_html(text: str) -> str:
+    """Remove HTML tags from Google's html_instructions field."""
+    return re.sub(r"<[^>]+>", "", text or "").strip()
+
+
+def _extract_steps(leg: dict) -> list[dict]:
+    steps = []
+    for step in leg.get("steps", []):
+        s: dict = {
+            "mode": step.get("travel_mode", "").lower(),
+            "instruction": _strip_html(step.get("html_instructions", "")),
+            "distance_m": step.get("distance", {}).get("value", 0),
+            "duration_s": step.get("duration", {}).get("value", 0),
+        }
+        td = step.get("transit_details")
+        if td:
+            line = td.get("line", {})
+            vehicle = line.get("vehicle", {})
+            s["transit_line"] = line.get("name")
+            s["transit_line_short"] = line.get("short_name")
+            s["transit_vehicle"] = vehicle.get("type", "").lower()
+            s["transit_color"] = line.get("color")
+            s["departure_stop"] = td.get("departure_stop", {}).get("name")
+            s["arrival_stop"] = td.get("arrival_stop", {}).get("name")
+            s["num_stops"] = td.get("num_stops")
+            s["headsign"] = td.get("headsign")
+        # Walking sub-steps (transit mode nests walking steps inside transit steps)
+        if step.get("steps"):
+            s["sub_steps"] = [_strip_html(ss.get("html_instructions", "")) for ss in step["steps"]]
+        steps.append(s)
+    return steps
+
+
 @router.get("/api/directions")
 def get_directions(
     origin: str = Query(..., description="lat,lng of the start point"),
@@ -80,7 +114,7 @@ def get_directions(
     Returns: {distance_m, duration_s, polyline, mode}
     Caches results in Redis for 1 hour.
     """
-    api_key = os.environ.get("GOOGLE_MAPS_KEY")
+    api_key = os.environ.get("GOOGLE_MAPS_KEY") or os.environ.get("GOOGLE_MAPS_API_KEY")
     if not api_key:
         raise HTTPException(status_code=500, detail="Maps API key not configured")
 
@@ -123,14 +157,14 @@ def get_directions(
 
     # ── Trim response ─────────────────────────────────────────────────────────
     try:
-        leg = data["routes"][0]["legs"][0]
+        route = data["routes"][0]
+        leg = route["legs"][0]
         result = {
             "mode": str(mode),
             "distance_m": leg["distance"]["value"],
             "duration_s": leg["duration"]["value"],
-            # overview_polyline covers the full route in one encoded string —
-            # efficient to transfer and decoded by the map SDK client-side.
-            "polyline": data["routes"][0]["overview_polyline"]["points"],
+            "polyline": route["overview_polyline"]["points"],
+            "steps": _extract_steps(leg),
         }
     except (KeyError, IndexError) as exc:
         log.exception("Unexpected Directions API response shape: %s", exc)

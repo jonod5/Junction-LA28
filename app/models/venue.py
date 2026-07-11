@@ -89,7 +89,7 @@ class ParkingOption(Base):
         Integer, ForeignKey("venue.id", ondelete="CASCADE"), nullable=False
     )
 
-    lot_name: Mapped[str | None] = mapped_column(String(200))
+    lot_name: Mapped[str | None] = mapped_column(Text)
     is_official: Mapped[bool] = mapped_column(Boolean, default=True)
 
     # Numeric price envelope (lowest / highest across all event types and purchase timing)
