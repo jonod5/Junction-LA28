@@ -1,0 +1,23 @@
+# Web framework
+fastapi
+uvicorn[standard]
+
+# Database — SQLAlchemy 2.0 style + sync psycopg2 driver
+# (psycopg2-binary bundles libpq so no system package needed in Docker)
+sqlalchemy>=2.0
+alembic
+psycopg2-binary
+
+# Cache
+redis
+
+# HTTP client — used for Google Places proxy and GTFS-RT fetching
+httpx
+
+# Retry helper for DB startup wait (used in main.py lifespan)
+tenacity
+
+# Dev / CI tools (not needed in prod but harmless to install)
+ruff
+pytest
+pytest-asyncio

@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # ruff is much faster than flake8/pylint and covers both linting and
+      # import sorting.  --select E,F,W matches the classic pyflakes/pycodestyle
+      # subset so warnings don't block CI on style-only issues yet.
+      - name: Lint with ruff
+        run: ruff check app/ tests/ --select E,F,W
+
+      # DATABASE_URL must be set (even to a dummy value) so the module-level
+      # `os.environ["DATABASE_URL"]` in db.py doesn't KeyError at import time.
+      # The test mocks _wait_for_db so no real DB is needed.
+      - name: Run tests
+        env:
+          DATABASE_URL: postgresql+psycopg2://ci:ci@localhost:5432/ci
+          REDIS_URL: redis://localhost:6379/0
+          GOOGLE_MAPS_KEY: dummy
+          GTFS_STATIC_URL: https://example.com/gtfs.zip
+          GTFS_RT_VEHICLES_URL: https://example.com/vehicles.pb
+        run: pytest tests/ -v

@@ -1,0 +1,55 @@
+services:
+
+  db:
+    image: postgres:16
+    # named volume keeps data across `docker compose down`; without it every
+    # restart wipes the DB which is acceptable for dev but bad for the GTFS
+    # static mirror (hundreds of thousands of rows).
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    # All postgres env vars come from .env — never hardcoded here.
+    env_file: .env
+    # healthcheck lets backend's depends_on wait for *actual* readiness,
+    # not just "container started".  pg_isready is the canonical probe.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:7
+    # No persistence needed for the GTFS-RT cache; it is a 30-second TTL
+    # and is rebuilt on every miss.  Add --appendonly yes here if you ever
+    # need durable queues.
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  backend:
+    build: .
+    # Explicit CMD override so the image's default CMD is not used when env
+    # vars differ between compose and bare docker run.
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8000:8000"
+    env_file: .env
+    # condition: service_healthy blocks backend startup until postgres
+    # passes its healthcheck.  The app also retries internally (see main.py)
+    # as a belt-and-suspenders measure for race conditions under load.
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # Mount app/ as a volume so --reload picks up edits without rebuild.
+    volumes:
+      - ./app:/app/app
+
+volumes:
+  # Named volume — survives compose down; deleted only with `docker compose
+  # down -v`.  Keeps the GTFS mirror intact between restarts.
+  postgres_data:
