@@ -45,6 +45,7 @@ export interface Trip {
 export interface DirectionStep {
   mode: string;
   instruction: string;
+  maneuver?: string;
   distance_m: number;
   duration_s: number;
   polyline?: string;

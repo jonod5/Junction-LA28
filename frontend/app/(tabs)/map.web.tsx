@@ -127,15 +127,25 @@ function SheetStepRow({ step }: { step: DirectionStep }) {
     );
   }
   // Walking / other
+  const TURN_ARROWS: Record<string, string> = {
+    'turn-left': '↰', 'sharp-left': '↰', 'slight-left': '↖', 'keep-left': '↖',
+    'turn-right': '↱', 'sharp-right': '↱', 'slight-right': '↗', 'keep-right': '↗',
+    'uturn-left': '↩', 'uturn-right': '↪',
+    'merge': '⬆', 'straight': '↑',
+    'fork-left': '↖', 'fork-right': '↗',
+    'ramp-left': '↖', 'ramp-right': '↗',
+    'roundabout-left': '↺', 'roundabout-right': '↻',
+  };
+  const arrow = step.maneuver ? (TURN_ARROWS[step.maneuver] ?? '↑') : '↑';
   return (
     <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 8 }}>
       <div style={{
-        width: 18, height: 18, borderRadius: '50%',
-        border: `2px dashed ${colors.primary}`,
+        width: 20, height: 20, borderRadius: '50%',
+        background: colors.primary,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         flexShrink: 0, marginTop: 1,
       }}>
-        <span style={{ fontSize: 8, color: colors.primary, fontWeight: 700 }}>~</span>
+        <span style={{ fontSize: 11, color: '#fff', lineHeight: 1 }}>{arrow}</span>
       </div>
       <div>
         <div style={{ fontSize: 12, color: '#374151', lineHeight: '1.4' }}>{step.instruction}</div>

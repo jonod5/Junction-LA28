@@ -69,19 +69,62 @@ def _cache_key(origin: str, destination: str, mode: str) -> str:
     return "dir:" + hashlib.md5(raw.encode()).hexdigest()  # noqa: S324 — not crypto
 
 
+_SKIP_INSTRUCTIONS = frozenset({"restricted usage road", "restricted usage road."})
+
+# Compass words Google prefixes on the first walking step
+_COMPASS = r"(?:north|south|east|west|northeast|northwest|southeast|southwest)"
+
+
 def _strip_html(text: str) -> str:
-    """Remove HTML tags from Google's html_instructions field."""
-    return re.sub(r"<[^>]+>", "", text or "").strip()
+    """Remove HTML tags from Google's html_instructions, keeping block elements separated."""
+    if not text:
+        return ""
+    # Block-level tags become spaces so adjacent words don't merge
+    text = re.sub(r"<(?:div|p|br)\b[^>]*>", " ", text, flags=re.IGNORECASE)
+    text = re.sub(r"</(?:div|p)>", " ", text, flags=re.IGNORECASE)
+    text = re.sub(r"<[^>]+>", "", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _clean_instruction(instruction: str, maneuver: str) -> str:
+    """Make Google navigation instructions friendlier for tourists."""
+    if not instruction:
+        return instruction
+    # "Head northwest on X toward Y" → "Continue on X"
+    # Only on steps with no explicit maneuver (the initial heading step)
+    if not maneuver:
+        instruction = re.sub(
+            rf"^Head\s+{_COMPASS}\w*\s+on\s+",
+            "Continue on ",
+            instruction,
+            flags=re.IGNORECASE,
+        )
+    # Drop "toward X" suffix — redundant given the next step
+    instruction = re.sub(r"\s+toward\s+.+$", "", instruction, flags=re.IGNORECASE)
+    return instruction.strip()
 
 
 def _extract_steps(leg: dict) -> list[dict]:
     steps = []
     for step in leg.get("steps", []):
+        raw_instruction = _strip_html(step.get("html_instructions", ""))
+        maneuver = step.get("maneuver", "") or ""
+
+        # Skip administrative notes that aren't actionable
+        if raw_instruction.lower().rstrip(".") in _SKIP_INSTRUCTIONS:
+            continue
+
+        instruction = _clean_instruction(raw_instruction, maneuver)
+        if not instruction:
+            continue
+
         s: dict = {
             "mode": step.get("travel_mode", "").lower(),
-            "instruction": _strip_html(step.get("html_instructions", "")),
+            "instruction": instruction,
+            "maneuver": maneuver,
             "distance_m": step.get("distance", {}).get("value", 0),
             "duration_s": step.get("duration", {}).get("value", 0),
+            "polyline": step.get("polyline", {}).get("points", ""),
         }
         td = step.get("transit_details")
         if td:
@@ -95,10 +138,12 @@ def _extract_steps(leg: dict) -> list[dict]:
             s["arrival_stop"] = td.get("arrival_stop", {}).get("name")
             s["num_stops"] = td.get("num_stops")
             s["headsign"] = td.get("headsign")
-        # Walking sub-steps (transit mode nests walking steps inside transit steps)
-        s["polyline"] = step.get("polyline", {}).get("points", "")
         if step.get("steps"):
-            s["sub_steps"] = [_strip_html(ss.get("html_instructions", "")) for ss in step["steps"]]
+            sub = [
+                _clean_instruction(_strip_html(ss.get("html_instructions", "")), ss.get("maneuver", "") or "")
+                for ss in step["steps"]
+            ]
+            s["sub_steps"] = [x for x in sub if x and x.lower().rstrip(".") not in _SKIP_INSTRUCTIONS]
         steps.append(s)
     return steps
 

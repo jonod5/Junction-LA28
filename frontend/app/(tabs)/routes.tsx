@@ -34,6 +34,28 @@ const VEHICLE_ICONS: Record<string, React.ComponentProps<typeof Feather>['name']
   default: 'navigation',
 };
 
+const MANEUVER_ICONS: Record<string, React.ComponentProps<typeof Feather>['name']> = {
+  'turn-left': 'corner-up-left',
+  'turn-right': 'corner-up-right',
+  'sharp-left': 'corner-up-left',
+  'sharp-right': 'corner-up-right',
+  'slight-left': 'corner-up-left',
+  'slight-right': 'corner-up-right',
+  'uturn-left': 'rotate-ccw',
+  'uturn-right': 'rotate-cw',
+  'straight': 'arrow-up',
+  'keep-left': 'corner-up-left',
+  'keep-right': 'corner-up-right',
+  'merge': 'git-merge',
+  'fork-left': 'git-branch',
+  'fork-right': 'git-branch',
+  'ramp-left': 'corner-up-left',
+  'ramp-right': 'corner-up-right',
+  'roundabout-left': 'rotate-ccw',
+  'roundabout-right': 'rotate-cw',
+  'ferry': 'anchor',
+};
+
 export default function RoutesScreen() {
   const { trip, saveLeg, saveDirectionSteps } = useTrip();
   const router = useRouter();
@@ -276,10 +298,13 @@ function StepRow({ step, isLast }: { step: DirectionStep; isLast: boolean }) {
   const isTransit = step.mode === 'transit';
   const isWalking = step.mode === 'walking';
 
+  const walkIcon: React.ComponentProps<typeof Feather>['name'] =
+    step.maneuver ? (MANEUVER_ICONS[step.maneuver] ?? 'arrow-up') : 'arrow-up';
+
   const icon: React.ComponentProps<typeof Feather>['name'] = isTransit
     ? (VEHICLE_ICONS[step.transit_vehicle ?? ''] ?? VEHICLE_ICONS.default)
     : isWalking
-      ? 'user'
+      ? walkIcon
       : 'map-pin';
 
   const iconColor = isTransit ? colors.secondary : colors.muted;
