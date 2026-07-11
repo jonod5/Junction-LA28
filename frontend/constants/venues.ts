@@ -1,4 +1,5 @@
 export interface VenueStub {
+  kind: 'venue';
   id: number;
   name: string;
   sport_use: string;
@@ -9,6 +10,7 @@ export interface VenueStub {
 
 export const VENUES: VenueStub[] = [
   {
+    kind: 'venue',
     id: 1,
     name: 'LA Memorial Coliseum',
     sport_use: 'Opening/Closing Ceremony, Athletics',
@@ -17,6 +19,7 @@ export const VENUES: VenueStub[] = [
     lng: -118.2879,
   },
   {
+    kind: 'venue',
     id: 2,
     name: 'SoFi Stadium',
     sport_use: 'Football',
@@ -25,6 +28,7 @@ export const VENUES: VenueStub[] = [
     lng: -118.3392,
   },
   {
+    kind: 'venue',
     id: 3,
     name: 'Dodger Stadium',
     sport_use: 'Baseball',
@@ -33,6 +37,7 @@ export const VENUES: VenueStub[] = [
     lng: -118.24,
   },
   {
+    kind: 'venue',
     id: 4,
     name: 'Crypto.com Arena',
     sport_use: 'Basketball, Boxing',
@@ -41,6 +46,7 @@ export const VENUES: VenueStub[] = [
     lng: -118.2673,
   },
   {
+    kind: 'venue',
     id: 5,
     name: 'Peacock Theater',
     sport_use: 'Gymnastics',
@@ -49,6 +55,7 @@ export const VENUES: VenueStub[] = [
     lng: -118.2666,
   },
   {
+    kind: 'venue',
     id: 6,
     name: 'Rose Bowl Stadium',
     sport_use: 'Football (Soccer)',

@@ -7,7 +7,7 @@ interface TripContextValue {
   error: string | null;
   clearError: () => void;
   createTrip: (name: string) => Promise<Trip | null>;
-  addStop: (venueId: number, name: string, lat: number, lng: number) => Promise<Stop | null>;
+  addStop: (venueId: number | null, name: string, lat: number, lng: number) => Promise<Stop | null>;
   removeStop: (stopId: number) => Promise<void>;
   reorderStops: (order: { stop_id: number; order_index: number }[]) => Promise<void>;
   saveLeg: (leg: Leg) => void;
@@ -49,9 +49,12 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
   );
 
   const addStop = useCallback(
-    async (venueId: number, name: string, lat: number, lng: number): Promise<Stop | null> => {
+    async (venueId: number | null, name: string, lat: number, lng: number): Promise<Stop | null> => {
       if (!trip) return null;
-      const stop = await run(() => api.addStop(trip.id, { venue_id: venueId, name, lat, lng }));
+      const body = venueId !== null
+        ? { venue_id: venueId, name, lat, lng }
+        : { name, lat, lng };
+      const stop = await run(() => api.addStop(trip.id, body));
       if (stop) {
         setTrip((prev) => prev && { ...prev, stops: [...prev.stops, stop] });
       }

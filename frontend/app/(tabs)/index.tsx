@@ -16,9 +16,8 @@ import {
   View,
 } from 'react-native';
 
-import { VenuePicker } from '@/components/VenuePicker';
+import { PickerItem, VenuePicker } from '@/components/VenuePicker';
 import { colors, radius, shadow, spacing } from '@/constants/theme';
-import { VenueStub } from '@/constants/venues';
 import { Stop } from '@/lib/api';
 import { useTrip } from '@/lib/store';
 
@@ -31,7 +30,10 @@ export default function BuilderScreen() {
   const [creating, setCreating] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
 
-  const addedIds = trip?.stops.map((s) => s.venue_id).filter(Boolean) as number[] ?? [];
+  const addedVenueIds = trip?.stops
+    .map((s) => s.venue_id)
+    .filter((id): id is number => id !== null) ?? [];
+  const addedNames = trip?.stops.map((s) => s.name) ?? [];
 
   const handleCreateTrip = async () => {
     setCreating(true);
@@ -40,10 +42,11 @@ export default function BuilderScreen() {
     setCreating(false);
   };
 
-  const handleSelectVenue = useCallback(
-    async (venue: VenueStub) => {
+  const handleSelectStop = useCallback(
+    async (item: PickerItem) => {
       setPickerOpen(false);
-      await addStop(venue.id, venue.name, venue.lat, venue.lng);
+      const venueId = item.kind === 'venue' ? item.id : null;
+      await addStop(venueId, item.name, item.lat, item.lng);
     },
     [addStop],
   );
@@ -198,17 +201,17 @@ export default function BuilderScreen() {
         {loading && <ActivityIndicator color={colors.primary} style={styles.footerLoader} />}
         <Pressable
           onPress={() => setPickerOpen(true)}
-          disabled={addedIds.length >= 6}
+          disabled={stops.length >= 10}
           accessibilityRole="button"
-          accessibilityLabel="Add venue to itinerary"
+          accessibilityLabel="Add stop to itinerary"
           style={({ pressed }) => [
             styles.addBtn,
-            addedIds.length >= 6 && styles.addBtnDisabled,
+            stops.length >= 10 && styles.addBtnDisabled,
             pressed && styles.addBtnPressed,
           ]}
         >
           <Feather name="plus" size={18} color={colors.onPrimary} />
-          <Text style={styles.addBtnText}>Add Venue</Text>
+          <Text style={styles.addBtnText}>Add Stop</Text>
         </Pressable>
 
         {stops.length >= 2 && (
@@ -226,9 +229,10 @@ export default function BuilderScreen() {
 
       <VenuePicker
         visible={pickerOpen}
-        onSelect={handleSelectVenue}
+        onSelect={handleSelectStop}
         onClose={() => setPickerOpen(false)}
-        disabledIds={addedIds}
+        disabledIds={addedVenueIds}
+        disabledNames={addedNames}
       />
     </SafeAreaView>
   );
