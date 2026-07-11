@@ -35,7 +35,7 @@ const VEHICLE_ICONS: Record<string, React.ComponentProps<typeof Feather>['name']
 };
 
 export default function RoutesScreen() {
-  const { trip, saveLeg } = useTrip();
+  const { trip, saveLeg, saveDirectionSteps } = useTrip();
   const router = useRouter();
 
   const stops = [...(trip?.stops ?? [])].sort((a, b) => a.order_index - b.order_index);
@@ -83,6 +83,7 @@ export default function RoutesScreen() {
         polyline: result.polyline,
       });
       saveLeg(leg);
+      saveDirectionSteps(fromStop.id, toStop.id, result.steps);
       patch(fromStop.id, toStop.id, { loading: false, result, stepsOpen: true });
     } catch (e: unknown) {
       patch(fromStop.id, toStop.id, {

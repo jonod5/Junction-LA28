@@ -96,6 +96,7 @@ def _extract_steps(leg: dict) -> list[dict]:
             s["num_stops"] = td.get("num_stops")
             s["headsign"] = td.get("headsign")
         # Walking sub-steps (transit mode nests walking steps inside transit steps)
+        s["polyline"] = step.get("polyline", {}).get("points", "")
         if step.get("steps"):
             s["sub_steps"] = [_strip_html(ss.get("html_instructions", "")) for ss in step["steps"]]
         steps.append(s)
