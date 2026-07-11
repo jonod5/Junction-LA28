@@ -181,34 +181,44 @@ export default function RoutesScreen() {
 
               {/* Result row */}
               {leg ? (
-                <View style={styles.resultRow}>
-                  <StatBadge icon="clock" value={formatDuration(leg.duration_s ?? 0)} />
-                  <StatBadge icon="map-pin" value={formatDistance(leg.distance_m ?? 0)} />
+                <>
+                  <View style={styles.resultRow}>
+                    <StatBadge icon="clock" value={formatDuration(leg.duration_s ?? 0)} />
+                    <StatBadge icon="map-pin" value={formatDistance(leg.distance_m ?? 0)} />
+                    <Pressable
+                      onPress={() => fetchDirections(from, to)}
+                      disabled={state.loading}
+                      hitSlop={8}
+                      accessibilityRole="button"
+                      accessibilityLabel="Refresh directions"
+                      style={({ pressed }) => [styles.refreshBtn, pressed && { opacity: 0.65 }]}
+                    >
+                      <Feather name="refresh-cw" size={14} color={colors.muted} />
+                    </Pressable>
+                    <Pressable
+                      onPress={() => patch(from.id, to.id, { stepsOpen: !state.stepsOpen })}
+                      accessibilityRole="button"
+                      style={({ pressed }) => [styles.stepsToggle, pressed && { opacity: 0.65 }]}
+                    >
+                      <Text style={styles.stepsToggleText}>
+                        {state.stepsOpen ? 'Hide steps' : 'Show steps'}
+                      </Text>
+                      <Feather
+                        name={state.stepsOpen ? 'chevron-up' : 'chevron-down'}
+                        size={14}
+                        color={colors.primary}
+                      />
+                    </Pressable>
+                  </View>
                   <Pressable
-                    onPress={() => fetchDirections(from, to)}
-                    disabled={state.loading}
-                    hitSlop={8}
+                    onPress={() => router.push('/map')}
                     accessibilityRole="button"
-                    accessibilityLabel="Refresh directions"
-                    style={({ pressed }) => [styles.refreshBtn, pressed && { opacity: 0.65 }]}
+                    style={({ pressed }) => [styles.viewMapBtn, pressed && { opacity: 0.8 }]}
                   >
-                    <Feather name="refresh-cw" size={14} color={colors.muted} />
+                    <Feather name="map" size={13} color={colors.onPrimary} />
+                    <Text style={styles.viewMapBtnText}>View on Map</Text>
                   </Pressable>
-                  <Pressable
-                    onPress={() => patch(from.id, to.id, { stepsOpen: !state.stepsOpen })}
-                    accessibilityRole="button"
-                    style={({ pressed }) => [styles.stepsToggle, pressed && { opacity: 0.65 }]}
-                  >
-                    <Text style={styles.stepsToggleText}>
-                      {state.stepsOpen ? 'Hide steps' : 'Show steps'}
-                    </Text>
-                    <Feather
-                      name={state.stepsOpen ? 'chevron-up' : 'chevron-down'}
-                      size={14}
-                      color={colors.primary}
-                    />
-                  </Pressable>
-                </View>
+                </>
               ) : (
                 <Pressable
                   onPress={() => fetchDirections(from, to)}
@@ -429,6 +439,13 @@ const styles = StyleSheet.create({
     fontFamily: 'Barlow_400Regular', fontSize: 13,
     color: colors.destructive, textAlign: 'center',
   },
+  viewMapBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: spacing.xs, backgroundColor: colors.secondary,
+    borderRadius: radius.sm, paddingVertical: 9, paddingHorizontal: spacing.md,
+    alignSelf: 'stretch', minHeight: 40,
+  },
+  viewMapBtnText: { fontFamily: 'Barlow_600SemiBold', fontSize: 13, color: colors.onPrimary },
 
   // ── Steps ────────────────────────────────────────────────────────────────
   stepsContainer: {
