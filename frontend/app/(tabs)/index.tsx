@@ -1,0 +1,468 @@
+import { Feather } from '@expo/vector-icons';
+import DraggableFlatList, {
+  RenderItemParams,
+  ScaleDecorator,
+} from 'react-native-draggable-flatlist';
+import { useRouter } from 'expo-router';
+import React, { useCallback, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  SafeAreaView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+
+import { VenuePicker } from '@/components/VenuePicker';
+import { colors, radius, shadow, spacing } from '@/constants/theme';
+import { VenueStub } from '@/constants/venues';
+import { Stop } from '@/lib/api';
+import { useTrip } from '@/lib/store';
+
+export default function BuilderScreen() {
+  const { trip, loading, error, clearError, createTrip, addStop, removeStop, reorderStops } =
+    useTrip();
+  const router = useRouter();
+
+  const [tripName, setTripName] = useState('My LA28 Trip');
+  const [creating, setCreating] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  const addedIds = trip?.stops.map((s) => s.venue_id).filter(Boolean) as number[] ?? [];
+
+  const handleCreateTrip = async () => {
+    setCreating(true);
+    const name = tripName.trim() || 'My LA28 Trip';
+    await createTrip(name);
+    setCreating(false);
+  };
+
+  const handleSelectVenue = useCallback(
+    async (venue: VenueStub) => {
+      setPickerOpen(false);
+      await addStop(venue.id, venue.name, venue.lat, venue.lng);
+    },
+    [addStop],
+  );
+
+  const handleRemove = (stop: Stop) => {
+    Alert.alert('Remove Stop', `Remove ${stop.name} from your itinerary?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: () => removeStop(stop.id),
+      },
+    ]);
+  };
+
+  const handleDragEnd = useCallback(
+    ({ data }: { data: Stop[] }) => {
+      const order = data.map((s, i) => ({ stop_id: s.id, order_index: i }));
+      reorderStops(order);
+    },
+    [reorderStops],
+  );
+
+  const renderStop = useCallback(
+    ({ item, drag, isActive }: RenderItemParams<Stop>) => (
+      <ScaleDecorator>
+        <Pressable
+          onLongPress={drag}
+          delayLongPress={150}
+          accessibilityLabel={`${item.name}, long press to reorder`}
+          style={[styles.stopCard, isActive && styles.stopCardDragging]}
+        >
+          <Feather name="menu" size={18} color={colors.muted} style={styles.dragHandle} />
+          <View style={styles.stopBadge}>
+            <Text style={styles.stopBadgeText}>
+              {(trip?.stops.findIndex((s) => s.id === item.id) ?? 0) + 1}
+            </Text>
+          </View>
+          <View style={styles.stopInfo}>
+            <Text style={styles.stopName} numberOfLines={1}>
+              {item.name}
+            </Text>
+          </View>
+          <Pressable
+            onPress={() => handleRemove(item)}
+            hitSlop={12}
+            accessibilityLabel={`Remove ${item.name}`}
+            accessibilityRole="button"
+          >
+            <Feather name="x-circle" size={20} color={colors.muted} />
+          </Pressable>
+        </Pressable>
+      </ScaleDecorator>
+    ),
+    [trip, handleRemove],
+  );
+
+  // ── No trip yet — creation form ────────────────────────────────────────────
+  if (!trip) {
+    return (
+      <SafeAreaView style={styles.screen}>
+        <View style={styles.emptyContainer}>
+          <Feather name="map-pin" size={56} color={colors.primary} style={styles.emptyIcon} />
+          <Text style={styles.emptyTitle}>Plan Your Olympic Journey</Text>
+          <Text style={styles.emptySubtitle}>
+            Build a custom itinerary across LA28 venues — add stops, get transit routes, and
+            discover how to get there.
+          </Text>
+
+          <View style={styles.createForm}>
+            <Text style={styles.inputLabel}>Trip name</Text>
+            <TextInput
+              style={styles.input}
+              value={tripName}
+              onChangeText={setTripName}
+              placeholder="My LA28 Trip"
+              placeholderTextColor={colors.muted}
+              returnKeyType="done"
+              accessibilityLabel="Trip name"
+            />
+            <Pressable
+              onPress={handleCreateTrip}
+              disabled={creating || loading}
+              accessibilityRole="button"
+              accessibilityLabel="Create trip"
+              style={({ pressed }) => [
+                styles.primaryBtn,
+                (creating || loading) && styles.primaryBtnDisabled,
+                pressed && styles.primaryBtnPressed,
+              ]}
+            >
+              {creating || loading ? (
+                <ActivityIndicator color={colors.onPrimary} size="small" />
+              ) : (
+                <>
+                  <Feather name="plus" size={18} color={colors.onPrimary} />
+                  <Text style={styles.primaryBtnText}>Create Trip</Text>
+                </>
+              )}
+            </Pressable>
+            {error && (
+              <Text style={styles.errorText} accessibilityRole="alert">
+                {error}
+              </Text>
+            )}
+          </View>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const stops = [...(trip.stops ?? [])].sort((a, b) => a.order_index - b.order_index);
+
+  return (
+    <SafeAreaView style={styles.screen}>
+      {/* Trip name bar */}
+      <View style={styles.tripBar}>
+        <Text style={styles.tripName} numberOfLines={1}>
+          {trip.name}
+        </Text>
+        <Text style={styles.stopCount}>
+          {stops.length} {stops.length === 1 ? 'stop' : 'stops'}
+        </Text>
+      </View>
+
+      {error && (
+        <Pressable onPress={clearError} style={styles.errorBanner}>
+          <Feather name="alert-circle" size={14} color={colors.destructive} />
+          <Text style={styles.errorBannerText}>{error}</Text>
+        </Pressable>
+      )}
+
+      {/* Stop list */}
+      {stops.length === 0 ? (
+        <View style={styles.listEmpty}>
+          <Feather name="plus-circle" size={40} color={colors.border} />
+          <Text style={styles.listEmptyText}>No venues yet</Text>
+          <Text style={styles.listEmptyHint}>Tap "Add Venue" to build your itinerary</Text>
+        </View>
+      ) : (
+        <DraggableFlatList
+          data={stops}
+          onDragEnd={handleDragEnd}
+          keyExtractor={(item) => String(item.id)}
+          renderItem={renderStop}
+          contentContainerStyle={styles.listContent}
+        />
+      )}
+
+      {/* Footer actions */}
+      <View style={styles.footer}>
+        {loading && <ActivityIndicator color={colors.primary} style={styles.footerLoader} />}
+        <Pressable
+          onPress={() => setPickerOpen(true)}
+          disabled={addedIds.length >= 6}
+          accessibilityRole="button"
+          accessibilityLabel="Add venue to itinerary"
+          style={({ pressed }) => [
+            styles.addBtn,
+            addedIds.length >= 6 && styles.addBtnDisabled,
+            pressed && styles.addBtnPressed,
+          ]}
+        >
+          <Feather name="plus" size={18} color={colors.onPrimary} />
+          <Text style={styles.addBtnText}>Add Venue</Text>
+        </Pressable>
+
+        {stops.length >= 2 && (
+          <Pressable
+            onPress={() => router.push('/routes')}
+            accessibilityRole="button"
+            accessibilityLabel="View routes between venues"
+            style={({ pressed }) => [styles.routesBtn, pressed && styles.routesBtnPressed]}
+          >
+            <Text style={styles.routesBtnText}>View Routes</Text>
+            <Feather name="arrow-right" size={16} color={colors.primary} />
+          </Pressable>
+        )}
+      </View>
+
+      <VenuePicker
+        visible={pickerOpen}
+        onSelect={handleSelectVenue}
+        onClose={() => setPickerOpen(false)}
+        disabledIds={addedIds}
+      />
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  // ── Empty / Create ────────────────────────────────────────────────────────
+  emptyContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.xl,
+  },
+  emptyIcon: {
+    marginBottom: spacing.lg,
+  },
+  emptyTitle: {
+    fontFamily: 'BarlowCondensed_700Bold',
+    fontSize: 28,
+    color: colors.foreground,
+    textAlign: 'center',
+    marginBottom: spacing.sm,
+  },
+  emptySubtitle: {
+    fontFamily: 'Barlow_400Regular',
+    fontSize: 15,
+    color: colors.muted,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: spacing.xl,
+  },
+  createForm: {
+    width: '100%',
+    gap: spacing.sm,
+  },
+  inputLabel: {
+    fontFamily: 'Barlow_500Medium',
+    fontSize: 13,
+    color: colors.foreground,
+    marginBottom: 2,
+  },
+  input: {
+    backgroundColor: colors.surface,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    fontFamily: 'Barlow_400Regular',
+    fontSize: 16,
+    color: colors.foreground,
+    minHeight: 48,
+  },
+  primaryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.primary,
+    borderRadius: radius.md,
+    paddingVertical: spacing.md,
+    minHeight: 52,
+    marginTop: spacing.xs,
+  },
+  primaryBtnDisabled: {
+    opacity: 0.5,
+  },
+  primaryBtnPressed: {
+    opacity: 0.85,
+    transform: [{ scale: 0.98 }],
+  },
+  primaryBtnText: {
+    fontFamily: 'Barlow_600SemiBold',
+    fontSize: 16,
+    color: colors.onPrimary,
+  },
+  errorText: {
+    fontFamily: 'Barlow_400Regular',
+    fontSize: 13,
+    color: colors.destructive,
+    textAlign: 'center',
+    marginTop: spacing.xs,
+  },
+  // ── Trip view ─────────────────────────────────────────────────────────────
+  tripBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  tripName: {
+    fontFamily: 'BarlowCondensed_700Bold',
+    fontSize: 20,
+    color: colors.foreground,
+    flex: 1,
+  },
+  stopCount: {
+    fontFamily: 'Barlow_400Regular',
+    fontSize: 13,
+    color: colors.muted,
+  },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: '#FEF2F2',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    marginHorizontal: spacing.md,
+    marginTop: spacing.sm,
+    borderRadius: radius.sm,
+  },
+  errorBannerText: {
+    fontFamily: 'Barlow_400Regular',
+    fontSize: 13,
+    color: colors.destructive,
+    flex: 1,
+  },
+  listContent: {
+    padding: spacing.md,
+    gap: spacing.sm,
+    paddingBottom: spacing.xxl,
+  },
+  listEmpty: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+  },
+  listEmptyText: {
+    fontFamily: 'Barlow_600SemiBold',
+    fontSize: 17,
+    color: colors.muted,
+  },
+  listEmptyHint: {
+    fontFamily: 'Barlow_400Regular',
+    fontSize: 14,
+    color: colors.muted,
+  },
+  // ── Stop card ─────────────────────────────────────────────────────────────
+  stopCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    gap: spacing.md,
+    ...shadow.sm,
+    marginBottom: spacing.sm,
+  },
+  stopCardDragging: {
+    ...shadow.md,
+    transform: [{ scale: 1.03 }],
+  },
+  dragHandle: {
+    flexShrink: 0,
+  },
+  stopBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  stopBadgeText: {
+    fontFamily: 'Barlow_600SemiBold',
+    fontSize: 13,
+    color: colors.onPrimary,
+  },
+  stopInfo: {
+    flex: 1,
+  },
+  stopName: {
+    fontFamily: 'Barlow_600SemiBold',
+    fontSize: 15,
+    color: colors.foreground,
+  },
+  // ── Footer ────────────────────────────────────────────────────────────────
+  footer: {
+    padding: spacing.md,
+    paddingBottom: spacing.lg,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    backgroundColor: colors.background,
+    gap: spacing.sm,
+  },
+  footerLoader: {
+    alignSelf: 'center',
+  },
+  addBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.primary,
+    borderRadius: radius.md,
+    paddingVertical: spacing.md,
+    minHeight: 52,
+  },
+  addBtnDisabled: {
+    opacity: 0.4,
+  },
+  addBtnPressed: {
+    opacity: 0.85,
+    transform: [{ scale: 0.98 }],
+  },
+  addBtnText: {
+    fontFamily: 'Barlow_600SemiBold',
+    fontSize: 16,
+    color: colors.onPrimary,
+  },
+  routesBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.md,
+    minHeight: 44,
+  },
+  routesBtnPressed: {
+    opacity: 0.65,
+  },
+  routesBtnText: {
+    fontFamily: 'Barlow_600SemiBold',
+    fontSize: 15,
+    color: colors.primary,
+  },
+});
