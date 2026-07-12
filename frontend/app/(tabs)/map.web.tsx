@@ -1,3 +1,4 @@
+/// <reference types="google.maps" />
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
