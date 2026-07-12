@@ -4,10 +4,13 @@ import DraggableFlatList, {
   ScaleDecorator,
 } from 'react-native-draggable-flatlist';
 import { useRouter } from 'expo-router';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Animated,
+  Easing,
+  Platform,
   Pressable,
   SafeAreaView,
   StyleSheet,
@@ -21,6 +24,9 @@ import { colors, radius, shadow, spacing } from '@/constants/theme';
 import { Stop } from '@/lib/api';
 import { useTrip } from '@/lib/store';
 
+// Olympic ring colors (L→R: blue, yellow, black, green, red)
+const RING_COLORS = ['#0085C7', '#F4C300', '#1A1A1A', '#009F3D', '#DF0024'];
+
 export default function BuilderScreen() {
   const { trip, loading, error, clearError, createTrip, addStop, removeStop, reorderStops } =
     useTrip();
@@ -29,6 +35,29 @@ export default function BuilderScreen() {
   const [tripName, setTripName] = useState('My LA28 Trip');
   const [creating, setCreating] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+
+  // Floating icon animation for empty state
+  const floatAnim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(floatAnim, {
+          toValue: -10,
+          duration: 1800,
+          useNativeDriver: true,
+          easing: Easing.inOut(Easing.sin),
+        }),
+        Animated.timing(floatAnim, {
+          toValue: 0,
+          duration: 1800,
+          useNativeDriver: true,
+          easing: Easing.inOut(Easing.sin),
+        }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [floatAnim]);
 
   const addedVenueIds = trip?.stops
     .map((s) => s.venue_id)
@@ -79,7 +108,7 @@ export default function BuilderScreen() {
           accessibilityLabel={`${item.name}, long press to reorder`}
           style={[styles.stopCard, isActive && styles.stopCardDragging]}
         >
-          <Feather name="menu" size={18} color={colors.muted} style={styles.dragHandle} />
+          <Feather name="menu" size={16} color={colors.mutedFg} style={styles.dragHandle} />
           <View style={styles.stopBadge}>
             <Text style={styles.stopBadgeText}>
               {(trip?.stops.findIndex((s) => s.id === item.id) ?? 0) + 1}
@@ -96,7 +125,7 @@ export default function BuilderScreen() {
             accessibilityLabel={`Remove ${item.name}`}
             accessibilityRole="button"
           >
-            <Feather name="x-circle" size={20} color={colors.muted} />
+            <Feather name="x-circle" size={20} color={colors.mutedFg} />
           </Pressable>
         </Pressable>
       </ScaleDecorator>
@@ -106,14 +135,36 @@ export default function BuilderScreen() {
 
   // ── No trip yet — creation form ────────────────────────────────────────────
   if (!trip) {
+    // Web gradient style applied inline to bypass StyleSheet type constraints
+    const webGradient = Platform.OS === 'web'
+      ? ({ background: 'linear-gradient(135deg, #0F3BBE 0%, #2563EB 100%)' } as any)
+      : {};
+
     return (
       <SafeAreaView style={styles.screen}>
         <View style={styles.emptyContainer}>
-          <Feather name="map-pin" size={56} color={colors.primary} style={styles.emptyIcon} />
-          <Text style={styles.emptyTitle}>Plan Your Olympic Journey</Text>
+
+          {/* Olympic rings */}
+          <View style={styles.olympicRings}>
+            {RING_COLORS.map((c, i) => (
+              <View
+                key={i}
+                style={[styles.ring, { borderColor: c }, i > 0 && styles.ringOverlap]}
+              />
+            ))}
+          </View>
+
+          {/* Floating torch icon */}
+          <Animated.View style={[styles.emptyIconWrap, { transform: [{ translateY: floatAnim }] }]}>
+            <View style={styles.emptyIconBg}>
+              <Feather name="map-pin" size={36} color="#FFFFFF" />
+            </View>
+          </Animated.View>
+
+          <Text style={styles.emptyTitle}>PLAN YOUR{'\n'}OLYMPIC JOURNEY</Text>
           <Text style={styles.emptySubtitle}>
             Build a custom itinerary across LA28 venues — add stops, get transit routes, and
-            discover how to get there.
+            navigate LA like a pro.
           </Text>
 
           <View style={styles.createForm}>
@@ -123,7 +174,7 @@ export default function BuilderScreen() {
               value={tripName}
               onChangeText={setTripName}
               placeholder="My LA28 Trip"
-              placeholderTextColor={colors.muted}
+              placeholderTextColor={colors.mutedFg}
               returnKeyType="done"
               accessibilityLabel="Trip name"
             />
@@ -134,6 +185,7 @@ export default function BuilderScreen() {
               accessibilityLabel="Create trip"
               style={({ pressed }) => [
                 styles.primaryBtn,
+                webGradient,
                 (creating || loading) && styles.primaryBtnDisabled,
                 pressed && styles.primaryBtnPressed,
               ]}
@@ -159,17 +211,25 @@ export default function BuilderScreen() {
   }
 
   const stops = [...(trip.stops ?? [])].sort((a, b) => a.order_index - b.order_index);
+  const webGradient = Platform.OS === 'web'
+    ? ({ background: 'linear-gradient(135deg, #0F3BBE 0%, #2563EB 100%)' } as any)
+    : {};
 
   return (
     <SafeAreaView style={styles.screen}>
       {/* Trip name bar */}
       <View style={styles.tripBar}>
-        <Text style={styles.tripName} numberOfLines={1}>
-          {trip.name}
-        </Text>
-        <Text style={styles.stopCount}>
-          {stops.length} {stops.length === 1 ? 'stop' : 'stops'}
-        </Text>
+        <View style={styles.tripBarLeft}>
+          <View style={styles.tripBarAccent} />
+          <Text style={styles.tripName} numberOfLines={1}>
+            {trip.name}
+          </Text>
+        </View>
+        <View style={styles.stopCountBadge}>
+          <Text style={styles.stopCountText}>
+            {stops.length} {stops.length === 1 ? 'stop' : 'stops'}
+          </Text>
+        </View>
       </View>
 
       {error && (
@@ -183,8 +243,8 @@ export default function BuilderScreen() {
       {stops.length === 0 ? (
         <View style={styles.listEmpty}>
           <Feather name="plus-circle" size={40} color={colors.border} />
-          <Text style={styles.listEmptyText}>No venues yet</Text>
-          <Text style={styles.listEmptyHint}>Tap "Add Venue" to build your itinerary</Text>
+          <Text style={styles.listEmptyText}>No stops yet</Text>
+          <Text style={styles.listEmptyHint}>Tap "Add Stop" to build your itinerary</Text>
         </View>
       ) : (
         <DraggableFlatList
@@ -206,6 +266,7 @@ export default function BuilderScreen() {
           accessibilityLabel="Add stop to itinerary"
           style={({ pressed }) => [
             styles.addBtn,
+            webGradient,
             stops.length >= 10 && styles.addBtnDisabled,
             pressed && styles.addBtnPressed,
           ]}
@@ -222,7 +283,7 @@ export default function BuilderScreen() {
             style={({ pressed }) => [styles.routesBtn, pressed && styles.routesBtnPressed]}
           >
             <Text style={styles.routesBtnText}>View Routes</Text>
-            <Feather name="arrow-right" size={16} color={colors.primary} />
+            <Feather name="arrow-right" size={16} color={colors.gold} />
           </Pressable>
         )}
       </View>
@@ -243,6 +304,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
+
   // ── Empty / Create ────────────────────────────────────────────────────────
   emptyContainer: {
     flex: 1,
@@ -250,14 +312,39 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: spacing.xl,
   },
-  emptyIcon: {
+  olympicRings: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: spacing.lg,
+  },
+  ring: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 3,
+  },
+  ringOverlap: {
+    marginLeft: -10,
+  },
+  emptyIconWrap: {
+    marginBottom: spacing.lg,
+  },
+  emptyIconBg: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...shadow.md,
   },
   emptyTitle: {
     fontFamily: 'BarlowCondensed_700Bold',
-    fontSize: 28,
+    fontSize: 36,
     color: colors.foreground,
     textAlign: 'center',
+    letterSpacing: 2,
+    lineHeight: 40,
     marginBottom: spacing.sm,
   },
   emptySubtitle: {
@@ -273,14 +360,16 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   inputLabel: {
-    fontFamily: 'Barlow_500Medium',
-    fontSize: 13,
-    color: colors.foreground,
+    fontFamily: 'Barlow_600SemiBold',
+    fontSize: 12,
+    color: colors.muted,
     marginBottom: 2,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
   },
   input: {
     backgroundColor: colors.surface,
-    borderWidth: 1.5,
+    borderWidth: 2,
     borderColor: colors.border,
     borderRadius: radius.md,
     paddingHorizontal: spacing.md,
@@ -305,13 +394,14 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   primaryBtnPressed: {
-    opacity: 0.85,
-    transform: [{ scale: 0.98 }],
+    opacity: 0.88,
+    transform: [{ scale: 0.97 }],
   },
   primaryBtnText: {
-    fontFamily: 'Barlow_600SemiBold',
+    fontFamily: 'Barlow_700Bold',
     fontSize: 16,
     color: colors.onPrimary,
+    letterSpacing: 0.5,
   },
   errorText: {
     fontFamily: 'Barlow_400Regular',
@@ -320,6 +410,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: spacing.xs,
   },
+
   // ── Trip view ─────────────────────────────────────────────────────────────
   tripBar: {
     flexDirection: 'row',
@@ -329,17 +420,38 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  tripBarLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    flex: 1,
+  },
+  tripBarAccent: {
+    width: 3,
+    height: 22,
+    borderRadius: 2,
+    backgroundColor: colors.primary,
+    flexShrink: 0,
   },
   tripName: {
     fontFamily: 'BarlowCondensed_700Bold',
     fontSize: 20,
     color: colors.foreground,
+    letterSpacing: 1,
     flex: 1,
   },
-  stopCount: {
-    fontFamily: 'Barlow_400Regular',
-    fontSize: 13,
-    color: colors.muted,
+  stopCountBadge: {
+    backgroundColor: colors.mutedBg,
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+  },
+  stopCountText: {
+    fontFamily: 'Barlow_600SemiBold',
+    fontSize: 12,
+    color: colors.primary,
   },
   errorBanner: {
     flexDirection: 'row',
@@ -351,6 +463,8 @@ const styles = StyleSheet.create({
     marginHorizontal: spacing.md,
     marginTop: spacing.sm,
     borderRadius: radius.sm,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.destructive,
   },
   errorBannerText: {
     fontFamily: 'Barlow_400Regular',
@@ -370,15 +484,17 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   listEmptyText: {
-    fontFamily: 'Barlow_600SemiBold',
-    fontSize: 17,
-    color: colors.muted,
+    fontFamily: 'BarlowCondensed_700Bold',
+    fontSize: 20,
+    color: colors.mutedFg,
+    letterSpacing: 1,
   },
   listEmptyHint: {
     fontFamily: 'Barlow_400Regular',
     fontSize: 14,
-    color: colors.muted,
+    color: colors.mutedFg,
   },
+
   // ── Stop card ─────────────────────────────────────────────────────────────
   stopCard: {
     flexDirection: 'row',
@@ -389,27 +505,30 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     ...shadow.sm,
     marginBottom: spacing.sm,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.primary,
   },
   stopCardDragging: {
     ...shadow.md,
     transform: [{ scale: 1.03 }],
+    borderLeftColor: colors.gold,
   },
   dragHandle: {
     flexShrink: 0,
   },
   stopBadge: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: colors.primary,
+    width: 32,
+    height: 32,
+    borderRadius: radius.full,
+    backgroundColor: colors.gold,
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
   },
   stopBadgeText: {
-    fontFamily: 'Barlow_600SemiBold',
-    fontSize: 13,
-    color: colors.onPrimary,
+    fontFamily: 'BarlowCondensed_700Bold',
+    fontSize: 15,
+    color: '#1A0A00',
   },
   stopInfo: {
     flex: 1,
@@ -419,13 +538,14 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: colors.foreground,
   },
+
   // ── Footer ────────────────────────────────────────────────────────────────
   footer: {
     padding: spacing.md,
     paddingBottom: spacing.lg,
     borderTopWidth: 1,
     borderTopColor: colors.border,
-    backgroundColor: colors.background,
+    backgroundColor: colors.surface,
     gap: spacing.sm,
   },
   footerLoader: {
@@ -445,13 +565,14 @@ const styles = StyleSheet.create({
     opacity: 0.4,
   },
   addBtnPressed: {
-    opacity: 0.85,
-    transform: [{ scale: 0.98 }],
+    opacity: 0.88,
+    transform: [{ scale: 0.97 }],
   },
   addBtnText: {
-    fontFamily: 'Barlow_600SemiBold',
+    fontFamily: 'Barlow_700Bold',
     fontSize: 16,
     color: colors.onPrimary,
+    letterSpacing: 0.5,
   },
   routesBtn: {
     flexDirection: 'row',
@@ -460,13 +581,17 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     paddingVertical: spacing.md,
     minHeight: 44,
+    borderWidth: 1.5,
+    borderColor: colors.gold,
+    borderRadius: radius.md,
   },
   routesBtnPressed: {
     opacity: 0.65,
   },
   routesBtnText: {
-    fontFamily: 'Barlow_600SemiBold',
+    fontFamily: 'Barlow_700Bold',
     fontSize: 15,
-    color: colors.primary,
+    color: colors.gold,
+    letterSpacing: 0.5,
   },
 });

@@ -570,14 +570,14 @@ const LEGEND_NUM: React.CSSProperties = {
 const SHEET_HANDLE_STYLE: React.CSSProperties = {
   height: 48, display: 'flex', alignItems: 'center',
   justifyContent: 'space-between', padding: '0 16px',
-  background: 'rgba(255,255,255,0.97)', backdropFilter: 'blur(6px)',
-  borderTop: `1px solid #FCEAE1`, cursor: 'pointer',
+  background: 'rgba(240,245,255,0.97)', backdropFilter: 'blur(8px)',
+  borderTop: `1px solid #C0CFF5`, cursor: 'pointer',
   userSelect: 'none',
 };
 const SHEET_CONTENT_STYLE: React.CSSProperties = {
   maxHeight: 300, overflowY: 'auto',
-  background: 'rgba(255,255,255,0.97)', backdropFilter: 'blur(6px)',
-  padding: '12px 16px', borderTop: `1px solid #FCEAE1`,
+  background: 'rgba(240,245,255,0.97)', backdropFilter: 'blur(8px)',
+  padding: '12px 16px', borderTop: `1px solid #C0CFF5`,
 };
 const SHEET_LEG_HEADER: React.CSSProperties = {
   display: 'flex', alignItems: 'center', gap: 6,

@@ -3,6 +3,7 @@ import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
+  Platform,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -248,8 +249,9 @@ export default function RoutesScreen() {
                   accessibilityRole="button"
                   style={({ pressed }) => [
                     styles.directionsBtn,
+                    Platform.OS === 'web' && { background: 'linear-gradient(135deg, #0F3BBE 0%, #2563EB 100%)' } as any,
                     state.loading && { opacity: 0.5 },
-                    pressed && { opacity: 0.8, transform: [{ scale: 0.98 }] },
+                    pressed && { opacity: 0.88, transform: [{ scale: 0.97 }] },
                   ]}
                 >
                   {state.loading ? (
@@ -387,7 +389,7 @@ const styles = StyleSheet.create({
     flex: 1, alignItems: 'center', justifyContent: 'center',
     gap: spacing.md, paddingHorizontal: spacing.xl,
   },
-  emptyTitle: { fontFamily: 'BarlowCondensed_700Bold', fontSize: 24, color: colors.muted },
+  emptyTitle: { fontFamily: 'BarlowCondensed_700Bold', fontSize: 28, color: colors.foreground, letterSpacing: 1.5, textTransform: 'uppercase' },
   emptyHint: {
     fontFamily: 'Barlow_400Regular', fontSize: 15, color: colors.muted,
     textAlign: 'center', lineHeight: 22,
@@ -403,10 +405,11 @@ const styles = StyleSheet.create({
   summaryCard: {
     backgroundColor: colors.surface, borderRadius: radius.md,
     padding: spacing.md, ...shadow.sm,
+    borderTopWidth: 3, borderTopColor: colors.gold,
   },
   summaryLabel: {
-    fontFamily: 'Barlow_500Medium', fontSize: 12, color: colors.muted,
-    marginBottom: spacing.sm, textTransform: 'uppercase', letterSpacing: 0.5,
+    fontFamily: 'Barlow_600SemiBold', fontSize: 11, color: colors.muted,
+    marginBottom: spacing.sm, textTransform: 'uppercase', letterSpacing: 1,
   },
   summaryRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   summarySep: { width: 1, height: 16, backgroundColor: colors.border },
@@ -420,6 +423,7 @@ const styles = StyleSheet.create({
   legCard: {
     backgroundColor: colors.surface, borderRadius: radius.md,
     padding: spacing.md, gap: spacing.md, ...shadow.sm,
+    borderLeftWidth: 3, borderLeftColor: colors.primary,
   },
   legHeader: { gap: spacing.xs },
   endpoint: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
@@ -431,6 +435,7 @@ const styles = StyleSheet.create({
   drivingWarn: {
     flexDirection: 'row', alignItems: 'flex-start', gap: spacing.xs,
     backgroundColor: '#FEF2F2', borderRadius: radius.sm, padding: spacing.sm,
+    borderLeftWidth: 3, borderLeftColor: colors.drivingWarning,
   },
   drivingWarnText: {
     fontFamily: 'Barlow_400Regular', fontSize: 12,
@@ -444,7 +449,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.mutedBg, borderRadius: radius.sm,
     paddingHorizontal: spacing.sm, paddingVertical: spacing.xs,
   },
-  statValue: { fontFamily: 'BarlowCondensed_600SemiBold', fontSize: 16, color: colors.foreground },
+  statValue: { fontFamily: 'BarlowCondensed_700Bold', fontSize: 17, color: colors.foreground },
   refreshBtn: {
     padding: spacing.sm, minHeight: 44, minWidth: 44,
     alignItems: 'center', justifyContent: 'center',
@@ -456,10 +461,10 @@ const styles = StyleSheet.create({
   stepsToggleText: { fontFamily: 'Barlow_600SemiBold', fontSize: 13, color: colors.primary },
   directionsBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: spacing.sm, backgroundColor: colors.secondary,
+    gap: spacing.sm, backgroundColor: colors.primary,
     borderRadius: radius.md, paddingVertical: spacing.md, minHeight: 48,
   },
-  directionsBtnText: { fontFamily: 'Barlow_600SemiBold', fontSize: 15, color: colors.onPrimary },
+  directionsBtnText: { fontFamily: 'Barlow_700Bold', fontSize: 15, color: colors.onPrimary, letterSpacing: 0.5 },
   legError: {
     fontFamily: 'Barlow_400Regular', fontSize: 13,
     color: colors.destructive, textAlign: 'center',

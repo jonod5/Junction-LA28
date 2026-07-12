@@ -1,17 +1,30 @@
 export const colors = {
-  primary: '#EA580C',
+  // ── Olympic electric blue ──────────────────────────────────────────────────
+  primary: '#1B4FD8',
   onPrimary: '#FFFFFF',
-  secondary: '#0891B2',
-  accent: '#D97706',
-  background: '#FFF7ED',
+  secondary: '#0891B2',    // cyan — transit / map
+  gold: '#F59E0B',         // Olympic gold — badges, active nav
+  accent: '#EA580C',       // warm orange — kept for contrast
+
+  // ── Backgrounds — cool blue-white ─────────────────────────────────────────
+  background: '#F0F5FF',
   surface: '#FFFFFF',
-  foreground: '#0F172A',
-  muted: '#78716C',
-  mutedBg: '#FDF4F0',
-  border: '#FCEAE1',
+  mutedBg: '#E4ECFF',
+
+  // ── Text ──────────────────────────────────────────────────────────────────
+  foreground: '#0A0F1E',
+  muted: '#4A5580',
+  mutedFg: '#8896B8',
+
+  // ── Structure ─────────────────────────────────────────────────────────────
+  border: '#C0CFF5',
+
+  // ── State ─────────────────────────────────────────────────────────────────
   destructive: '#DC2626',
-  success: '#16A34A',
-  policyBanner: '#4C1D95',
+  success: '#059669',
+
+  // ── Semantic ──────────────────────────────────────────────────────────────
+  policyBanner: '#1E1B4B',
   transitBadge: '#0891B2',
   drivingWarning: '#DC2626',
 } as const;
@@ -25,26 +38,28 @@ export const spacing = {
   xxl: 48,
 } as const;
 
+// Angular radii — athletic / kinetic brutalism feel
 export const radius = {
-  sm: 8,
-  md: 16,
-  lg: 24,
+  sm: 4,
+  md: 8,
+  lg: 14,
   full: 9999,
 } as const;
 
+// Blue-tinted shadows for depth with brand alignment
 export const shadow = {
   sm: {
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-    elevation: 2,
+    shadowColor: '#1B4FD8',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.10,
+    shadowRadius: 8,
+    elevation: 3,
   },
   md: {
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 12,
-    elevation: 4,
+    shadowColor: '#1B4FD8',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.16,
+    shadowRadius: 20,
+    elevation: 6,
   },
 } as const;
