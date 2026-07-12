@@ -104,13 +104,21 @@ def _clean_instruction(instruction: str, maneuver: str) -> str:
     return instruction.strip()
 
 
+_SKIP_PATTERN = re.compile(
+    r"\s+(?:" + "|".join(re.escape(n) for n in _SKIP_INSTRUCTIONS) + r")\.?\s*$",
+    re.IGNORECASE,
+)
+
+
 def _extract_steps(leg: dict) -> list[dict]:
     steps = []
     for step in leg.get("steps", []):
         raw_instruction = _strip_html(step.get("html_instructions", ""))
+        # Strip administrative notes appended by Google as inline divs (e.g. "Restricted usage road")
+        raw_instruction = _SKIP_PATTERN.sub("", raw_instruction).strip()
         maneuver = step.get("maneuver", "") or ""
 
-        # Skip administrative notes that aren't actionable
+        # Skip steps whose entire content is an administrative note
         if raw_instruction.lower().rstrip(".") in _SKIP_INSTRUCTIONS:
             continue
 
