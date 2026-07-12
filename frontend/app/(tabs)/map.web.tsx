@@ -7,6 +7,12 @@ import { DirectionStep } from '@/lib/api';
 import { colors, radius, spacing } from '@/constants/theme';
 import { decodePolyline, formatDistance, formatDuration } from '@/lib/polyline';
 import { useTrip } from '@/lib/store';
+import {
+  VENUE_TRANSIT,
+  TRANSIT_LAYER_CONFIG,
+  type TransitLayer,
+  type VenueTransitPoint,
+} from '@/constants/venue-transit';
 
 const MAPS_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_KEY ?? '';
 
@@ -46,6 +52,50 @@ function makeBadgeIcon(text: string, bg: string): google.maps.Icon {
     scaledSize: new window.google.maps.Size(w, h),
     anchor: new window.google.maps.Point(w / 2, h / 2),
   };
+}
+
+function makeTransitIcon(type: TransitLayer): google.maps.Icon {
+  const { label, fill } = TRANSIT_LAYER_CONFIG[type];
+  const size = 22;
+  const r = size / 2;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}">
+    <circle cx="${r}" cy="${r}" r="${r - 1.5}" fill="${fill}" stroke="white" stroke-width="2"/>
+    <text x="${r}" y="${r + 4}" text-anchor="middle" fill="white"
+      font-size="10" font-weight="bold" font-family="system-ui,sans-serif">${label}</text>
+  </svg>`;
+  return {
+    url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
+    scaledSize: new window.google.maps.Size(size, size),
+    anchor: new window.google.maps.Point(r, r),
+  };
+}
+
+const VENUE_NAME: Record<number, string> = {
+  1: 'LA Memorial Coliseum',
+  2: 'SoFi Stadium',
+  3: 'Dodger Stadium',
+  4: 'Crypto.com Arena',
+  5: 'Peacock Theater',
+  6: 'Rose Bowl',
+};
+
+function transitInfoHtml(point: VenueTransitPoint): string {
+  const { fill, displayName } = TRANSIT_LAYER_CONFIG[point.type];
+  const venueLabel = point.venueIds.map((id) => VENUE_NAME[id]).filter(Boolean).join(' · ');
+  return [
+    `<div style="font-family:system-ui,sans-serif;max-width:230px;line-height:1.5;padding:2px 0">`,
+    `<div style="display:inline-block;background:${fill};color:#fff;padding:2px 8px;border-radius:8px;font-size:10px;font-weight:700;margin-bottom:5px">${displayName}</div>`,
+    `<div style="font-size:12px;font-weight:700;color:#1F2937;margin-bottom:2px">${point.name}</div>`,
+    point.lines?.length ? `<div style="font-size:11px;color:#4B5563">${point.lines.join(' · ')}</div>` : '',
+    point.providers?.length ? `<div style="font-size:11px;color:#4B5563">${point.providers.join(' · ')}</div>` : '',
+    point.walkMin != null
+      ? `<div style="font-size:11px;color:#6B7280;margin-top:2px">🚶 ${point.walkMin} min · ${venueLabel}</div>`
+      : venueLabel
+        ? `<div style="font-size:11px;color:#6B7280;margin-top:2px">Near: ${venueLabel}</div>`
+        : '',
+    point.note ? `<div style="font-size:11px;color:#9CA3AF;margin-top:3px">${point.note}</div>` : '',
+    `</div>`,
+  ].join('');
 }
 
 const WALK_DASH = {
@@ -173,10 +223,15 @@ export default function MapWebScreen() {
   const clickWindowRef = useRef<google.maps.InfoWindow | null>(null);
   const hoverWindowRef = useRef<google.maps.InfoWindow | null>(null);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const transitMarkersRef = useRef<google.maps.Marker[]>([]);
 
   const [mapError, setMapError] = useState<string | null>(null);
+  const [mapReady, setMapReady] = useState(false);
   const [hasSteps, setHasSteps] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [layerVisibility, setLayerVisibility] = useState<Record<TransitLayer, boolean>>({
+    rail: true, bus: true, bike: true, scooter: true, dropoff: true,
+  });
 
   const stops = [...(trip?.stops ?? [])].sort((a, b) => a.order_index - b.order_index);
   const legs = trip?.legs ?? [];
@@ -203,6 +258,7 @@ export default function MapWebScreen() {
           styles: MAP_STYLE,
         });
         mapRef.current = map;
+        setMapReady(true);
         clickWindowRef.current = new window.google.maps.InfoWindow();
         hoverWindowRef.current = new window.google.maps.InfoWindow({ disableAutoPan: true });
       })
@@ -391,6 +447,34 @@ export default function MapWebScreen() {
     }
   }, [stops, legs, directionSteps]);
 
+  // Transit overlay — PDF-sourced rail/bus/bike/scooter/drop-off markers
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    transitMarkersRef.current.forEach((m) => m.setMap(null));
+    transitMarkersRef.current = [];
+    VENUE_TRANSIT.forEach((point) => {
+      if (!layerVisibility[point.type]) return;
+      const marker = new window.google.maps.Marker({
+        position: { lat: point.lat, lng: point.lng },
+        map,
+        icon: makeTransitIcon(point.type),
+        title: point.name,
+        zIndex: 12,
+        optimized: false,
+      });
+      marker.addListener('click', () => {
+        clickWindowRef.current?.setContent(transitInfoHtml(point));
+        clickWindowRef.current?.open(map, marker);
+      });
+      transitMarkersRef.current.push(marker);
+    });
+    return () => {
+      transitMarkersRef.current.forEach((m) => m.setMap(null));
+      transitMarkersRef.current = [];
+    };
+  }, [mapReady, layerVisibility]);
+
   const hasRoutes = legs.length > 0;
   const summaryLine = [
     `${legs.length} leg${legs.length !== 1 ? 's' : ''}`,
@@ -406,26 +490,59 @@ export default function MapWebScreen() {
         style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 56 }}
       />
 
-      {/* Legend */}
-      {!mapError && hasRoutes && (
-        <div style={LEGEND_STYLE}>
-          <div style={LEGEND_ROW}>
-            <div style={{ ...LEGEND_SWATCH, borderTop: `3px dashed ${colors.primary}` }} />
-            <span style={LEGEND_LABEL}>Walk</span>
-          </div>
-          <div style={LEGEND_ROW}>
-            <div style={{ ...LEGEND_SWATCH, borderTop: `4px solid ${colors.secondary}` }} />
-            <span style={LEGEND_LABEL}>Transit</span>
-          </div>
-          <div style={LEGEND_ROW}>
-            <div style={LEGEND_DOT}><span style={LEGEND_NUM}>1</span></div>
-            <span style={LEGEND_LABEL}>Venue</span>
-          </div>
-          {!hasSteps && (
-            <div style={{ ...LEGEND_LABEL, marginTop: 5, color: '#aaa', fontSize: 10, maxWidth: 110, lineHeight: '1.3' }}>
-              Tap Routes → Get Directions for step detail
-            </div>
+      {/* Legend + Layer Toggles */}
+      {!mapError && (
+        <div style={{ ...LEGEND_STYLE, bottom: hasRoutes ? 116 : 68 }}>
+          {hasRoutes && (
+            <>
+              <div style={LEGEND_ROW}>
+                <div style={{ ...LEGEND_SWATCH, borderTop: `3px dashed ${colors.primary}` }} />
+                <span style={LEGEND_LABEL}>Walk</span>
+              </div>
+              <div style={LEGEND_ROW}>
+                <div style={{ ...LEGEND_SWATCH, borderTop: `4px solid ${colors.secondary}` }} />
+                <span style={LEGEND_LABEL}>Transit</span>
+              </div>
+              <div style={LEGEND_ROW}>
+                <div style={LEGEND_DOT}><span style={LEGEND_NUM}>1</span></div>
+                <span style={LEGEND_LABEL}>Venue</span>
+              </div>
+              {!hasSteps && (
+                <div style={{ ...LEGEND_LABEL, marginTop: 5, color: '#aaa', fontSize: 10, maxWidth: 110, lineHeight: '1.3' }}>
+                  Tap Routes → Get Directions for step detail
+                </div>
+              )}
+              <div style={{ borderTop: '1px solid #E5E7EB', marginTop: 4, marginBottom: 4 }} />
+            </>
           )}
+          <div style={{ ...LEGEND_LABEL, fontSize: 9, color: '#9CA3AF', letterSpacing: '0.06em', marginBottom: 4 }}>
+            NEARBY
+          </div>
+          {(Object.keys(TRANSIT_LAYER_CONFIG) as TransitLayer[]).map((layer) => {
+            const { label, fill, displayName } = TRANSIT_LAYER_CONFIG[layer];
+            const active = layerVisibility[layer];
+            return (
+              <div
+                key={layer}
+                onClick={() => setLayerVisibility((prev) => ({ ...prev, [layer]: !prev[layer] }))}
+                style={{ ...LEGEND_ROW, cursor: 'pointer', opacity: active ? 1 : 0.4 }}
+              >
+                <div style={{
+                  width: 18, height: 18, borderRadius: '50%',
+                  background: active ? fill : '#9CA3AF',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  flexShrink: 0,
+                }}>
+                  <span style={{ fontSize: 9, color: '#fff', fontWeight: 700, fontFamily: 'system-ui,sans-serif' }}>
+                    {label}
+                  </span>
+                </div>
+                <span style={{ ...LEGEND_LABEL, fontSize: 11, color: active ? '#374151' : '#9CA3AF' }}>
+                  {displayName}
+                </span>
+              </div>
+            );
+          })}
         </div>
       )}
 
