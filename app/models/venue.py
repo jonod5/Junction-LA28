@@ -146,12 +146,12 @@ class TransitAccess(Base):
         Integer, ForeignKey("venue.id", ondelete="CASCADE"), nullable=False
     )
 
-    line: Mapped[str | None] = mapped_column(String(100))
+    line: Mapped[str | None] = mapped_column(Text)
     mode: Mapped[str | None] = mapped_column(String(50))
-    stop_name: Mapped[str | None] = mapped_column(String(200))
+    stop_name: Mapped[str | None] = mapped_column(Text)
     walk_time_min: Mapped[int | None] = mapped_column(Integer)
 
-    nearest_metro_station: Mapped[str | None] = mapped_column(String(200))
+    nearest_metro_station: Mapped[str | None] = mapped_column(Text)
     bus_lines_serving: Mapped[str | None] = mapped_column(Text)
     bike_lane_nearby: Mapped[bool | None] = mapped_column(Boolean)
     gbfs_dock_description: Mapped[str | None] = mapped_column(Text)
