@@ -11,6 +11,7 @@ Startup sequence:
 """
 
 import logging
+import os
 import time
 from contextlib import asynccontextmanager
 
@@ -59,13 +60,17 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+_default_origins = [
+    "http://localhost:8081",
+    "http://localhost:19006",
+    "http://localhost:3000",
+]
+_extra = os.environ.get("CORS_ORIGINS", "")
+_allowed_origins = _default_origins + [o.strip() for o in _extra.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:8081",
-        "http://localhost:19006",
-        "http://localhost:3000",
-    ],
+    allow_origins=_allowed_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
