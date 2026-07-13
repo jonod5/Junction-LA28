@@ -6,6 +6,10 @@
     {
       "source": "/api/:path*",
       "destination": "https://la28-trip-planner-production.up.railway.app/api/:path*"
+    },
+    {
+      "source": "/((?!api/|_expo/|assets/|favicon\\.).*)",
+      "destination": "/index.html"
     }
   ]
 }
