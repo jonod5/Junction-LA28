@@ -1,4 +1,11 @@
-const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8000';
+// On production web (Vercel), use relative URLs — vercel.json rewrites /api/* to Railway.
+// On native or local dev, fall back to the explicit env var or localhost.
+function getBaseUrl(): string {
+  if (process.env.EXPO_PUBLIC_API_URL) return process.env.EXPO_PUBLIC_API_URL;
+  if (typeof window !== 'undefined' && window.location.hostname !== 'localhost') return '';
+  return 'http://localhost:8000';
+}
+const BASE_URL = getBaseUrl();
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
