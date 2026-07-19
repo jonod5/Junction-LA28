@@ -242,7 +242,7 @@ export default function MapWebScreen() {
   // Init Google Maps once
   useEffect(() => {
     if (!MAPS_KEY) {
-      setMapError('Add EXPO_PUBLIC_GOOGLE_MAPS_KEY to frontend/.env.local, then restart Metro.');
+      setMapError('Google Maps API key is not configured. Contact the app administrator.');
       return;
     }
     let cancelled = false;
