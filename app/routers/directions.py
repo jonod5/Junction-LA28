@@ -48,7 +48,27 @@ class TravelMode(StrEnum):
     bicycling = "bicycling"
 
 
-def _cache_key(origin: str, destination: str, mode: str) -> str:
+# Departure-time bucket for transit cache keys.  Transit routes DO depend on
+# when you leave, so the cache key must include it — otherwise the engine would
+# silently serve a route computed for a different time.  Bucketing to 5-minute
+# windows keeps hit rates sane while staying time-aware.
+DEPARTURE_BUCKET_S = 300
+
+
+class DirectionsError(Exception):
+    """Upstream/config failure with an HTTP status hint for the route layer."""
+
+    def __init__(self, detail: str, status_code: int = 502):
+        super().__init__(detail)
+        self.detail = detail
+        self.status_code = status_code
+
+
+def _api_key() -> str | None:
+    return os.environ.get("GOOGLE_MAPS_KEY") or os.environ.get("GOOGLE_MAPS_API_KEY")
+
+
+def _cache_key(origin: str, destination: str, mode: str, departure_bucket: int | None = None) -> str:
     # Round coordinates to 5 dp to collapse trivially different floats.
     def _norm(coord: str) -> str:
         parts = coord.split(",")
@@ -60,8 +80,84 @@ def _cache_key(origin: str, destination: str, mode: str) -> str:
         return coord
 
     raw = f"directions:{_norm(origin)}:{_norm(destination)}:{mode}"
+    # Only transit passes a departure bucket; other modes keep their old keys
+    # (no cache churn) since walking/driving/bicycling don't depend on time.
+    if departure_bucket is not None:
+        raw += f":dep{departure_bucket}"
     # Hash to cap key length and avoid special characters.
     return "dir:" + hashlib.md5(raw.encode()).hexdigest()  # noqa: S324 — not crypto
+
+
+def fetch_directions(
+    origin: str,
+    destination: str,
+    mode: str,
+    departure_time: int | None = None,
+) -> dict | None:
+    """
+    Core Directions fetch — cache-first, returns the trimmed result dict.
+
+    Returns None when Google reports ZERO_RESULTS (no route of this mode), so
+    callers (the route engine) can treat "no route" as "candidate infeasible"
+    rather than an error.  Raises DirectionsError for config/upstream failures.
+
+    departure_time (unix seconds) is honoured for transit only and is folded
+    into the cache key via a 5-minute bucket.
+    """
+    api_key = _api_key()
+    if not api_key:
+        raise DirectionsError("Maps API key not configured", status_code=500)
+
+    is_transit = mode == "transit"
+    bucket = None
+    if is_transit and departure_time:
+        bucket = departure_time - (departure_time % DEPARTURE_BUCKET_S)
+
+    cache_key = _cache_key(origin, destination, mode, bucket)
+    r = get_redis()
+    cached = r.get(cache_key)
+    if cached:
+        log.debug("Directions cache hit: %s", cache_key)
+        return json.loads(cached)
+
+    params = {"origin": origin, "destination": destination, "mode": mode, "key": api_key}
+    if is_transit and departure_time:
+        params["departure_time"] = int(departure_time)
+
+    try:
+        with httpx.Client(timeout=10) as client:
+            resp = client.get(DIRECTIONS_URL, params=params)
+            resp.raise_for_status()
+    except httpx.HTTPError as exc:
+        log.exception("Directions API request failed: %s", exc)
+        raise DirectionsError("Directions API unavailable", status_code=502) from exc
+
+    data = resp.json()
+    status = data.get("status")
+
+    if status == "ZERO_RESULTS":
+        return None
+    if status != "OK":
+        log.error("Directions API error status: %s", status)
+        raise DirectionsError(f"Directions API error: {status}", status_code=502)
+
+    try:
+        route = data["routes"][0]
+        leg = route["legs"][0]
+        result = {
+            "mode": mode,
+            "distance_m": leg["distance"]["value"],
+            "duration_s": leg["duration"]["value"],
+            "polyline": route["overview_polyline"]["points"],
+            "steps": _extract_steps(leg),
+        }
+    except (KeyError, IndexError) as exc:
+        log.exception("Unexpected Directions API response shape: %s", exc)
+        raise DirectionsError("Unexpected Directions API response", status_code=502) from exc
+
+    r.setex(cache_key, CACHE_TTL, json.dumps(result))
+    log.debug("Directions cached for %ds: %s→%s [%s]", CACHE_TTL, origin, destination, mode)
+    return result
 
 
 _SKIP_INSTRUCTIONS = frozenset({"restricted usage road", "restricted usage road."})
@@ -160,66 +256,17 @@ def get_directions(
     """
     Proxy Google Directions and return trimmed routing data.
 
-    Returns: {distance_m, duration_s, polyline, mode}
+    Returns: {mode, distance_m, duration_s, polyline, steps}
     Caches results in Redis for 1 hour.
     """
-    api_key = os.environ.get("GOOGLE_MAPS_KEY") or os.environ.get("GOOGLE_MAPS_API_KEY")
-    if not api_key:
-        raise HTTPException(status_code=500, detail="Maps API key not configured")
-
-    cache_key = _cache_key(origin, destination, str(mode))
-    r = get_redis()
-
-    # ── Cache hit ─────────────────────────────────────────────────────────────
-    cached = r.get(cache_key)
-    if cached:
-        log.debug("Directions cache hit: %s", cache_key)
-        return json.loads(cached)
-
-    # ── Upstream call ─────────────────────────────────────────────────────────
-    params = {
-        "origin": origin,
-        "destination": destination,
-        "mode": str(mode),
-        "key": api_key,
-    }
     try:
-        with httpx.Client(timeout=10) as client:
-            resp = client.get(DIRECTIONS_URL, params=params)
-            resp.raise_for_status()
-    except httpx.HTTPError as exc:
-        log.exception("Directions API request failed: %s", exc)
-        raise HTTPException(status_code=502, detail="Directions API unavailable") from exc
+        result = fetch_directions(origin, destination, str(mode))
+    except DirectionsError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
-    data = resp.json()
-    status = data.get("status")
-
-    if status == "ZERO_RESULTS":
+    if result is None:
         raise HTTPException(
             status_code=404,
             detail=f"No {mode} route found between the given points",
         )
-
-    if status != "OK":
-        log.error("Directions API error status: %s", status)
-        raise HTTPException(status_code=502, detail=f"Directions API error: {status}")
-
-    # ── Trim response ─────────────────────────────────────────────────────────
-    try:
-        route = data["routes"][0]
-        leg = route["legs"][0]
-        result = {
-            "mode": str(mode),
-            "distance_m": leg["distance"]["value"],
-            "duration_s": leg["duration"]["value"],
-            "polyline": route["overview_polyline"]["points"],
-            "steps": _extract_steps(leg),
-        }
-    except (KeyError, IndexError) as exc:
-        log.exception("Unexpected Directions API response shape: %s", exc)
-        raise HTTPException(status_code=502, detail="Unexpected Directions API response") from exc
-
-    # ── Cache and return ──────────────────────────────────────────────────────
-    r.setex(cache_key, CACHE_TTL, json.dumps(result))
-    log.debug("Directions cached for %ds: %s→%s [%s]", CACHE_TTL, origin, destination, mode)
     return result

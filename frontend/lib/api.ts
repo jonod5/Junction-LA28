@@ -190,6 +190,56 @@ export interface MicromobilityResult {
   };
 }
 
+// ── Route optimization engine ──────────────────────────────────────────────────
+
+export type RouteMode =
+  | 'walk' | 'bike' | 'scooter' | 'transit' | 'metro_micro' | 'ridehail' | 'park_and_ride';
+
+export interface RouteLeg {
+  mode: string;
+  distance_m: number | null;
+  duration_s: number | null;
+  polyline: string;
+  steps: DirectionStep[];
+}
+
+export interface RouteOption {
+  id: string;
+  label: string;
+  modes: RouteMode[];
+  total_minutes: number;
+  total_cost_usd: number;
+  cost_is_estimate: boolean;
+  num_transfers: number;
+  legs: RouteLeg[];
+  score: number;
+  score_breakdown: {
+    time_norm: number;
+    cost_norm: number;
+    num_transfers: number;
+    weights: { time: number; cost: number; transfer: number };
+  };
+}
+
+export interface RouteOptimizeResult {
+  origin: { lat: number; lng: number };
+  destination: { lat: number; lng: number };
+  departure_time: number | null;
+  preferences: string[] | null;
+  weights: { time: number; cost: number; transfer: number };
+  count: number;
+  options: RouteOption[];
+  notes: string[];
+}
+
+export interface RouteOptimizeRequest {
+  origin: { lat: number; lng: number };
+  destination: { lat: number; lng: number };
+  preferences?: RouteMode[] | null;
+  departure_time?: number | null;
+  destination_venue_id?: number | null;
+}
+
 // ── API ───────────────────────────────────────────────────────────────────────
 
 export const api = {
@@ -235,4 +285,10 @@ export const api = {
     request<MicromobilityResult>(
       `/api/micromobility?lat=${lat}&lng=${lng}&radius_m=${radiusM}`,
     ),
+
+  optimizeRoutes: (body: RouteOptimizeRequest) =>
+    request<RouteOptimizeResult>('/api/routes/optimize', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
 };

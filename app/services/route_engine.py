@@ -1,0 +1,426 @@
+"""
+Multimodal route optimization engine — deterministic, no LLM.
+
+Methodology (this docstring is the source for the journal/poster write-up):
+
+1. CANDIDATE GENERATION is compositional, not a hard-coded list.  Each leg is
+   modeled as [access] + [backbone] + [egress].  We start from Google's transit
+   result (which itself already graph-routes rail/bus with walking access) and
+   then compose variants by replacing the leading/trailing walking portion with
+   shared micromobility WHERE a live GBFS vehicle is actually available and the
+   distance is sensible.  Direct single-mode candidates (walk-only, bike/scooter
+   only, rideshare, Metro Micro) are added on the same feasibility terms.  So
+   combinations like "scooter → rail → walk" or "bike end-to-end" emerge from
+   the segment options rather than being enumerated by hand.
+
+2. FEASIBILITY PRUNING only — never taste.  Walk legs over ~2 km and
+   micromobility legs over ~5 km are dropped; micromobility is only proposed
+   where GBFS shows availability; Metro Micro only where both endpoints share
+   one of its two venue-relevant zones.  We then drop strictly-dominated
+   options (worse on BOTH time and cost than some other candidate) and cap the
+   set.  What a traveler *prefers* is expressed through preferences + scoring,
+   not by pre-filtering the menu.
+
+3. RANKING is a deterministic weighted score:
+       score = w_time·norm(minutes) + w_cost·norm(cost) + w_transfer·transfers
+   Time and cost are min-max normalized to 0–1 WITHIN the candidate set first,
+   so the two commensurate.  Lower score ranks higher.  Identical inputs always
+   produce an identical ranking (stable tie-breaks on time, then cost, then id).
+   No language model is anywhere in this path — Gemini may only *explain* the
+   already-ranked output later.
+
+Excluded modes are filtered out before scoring, so a mode the traveler opted
+out of can never surface as the top recommendation.
+"""
+
+from __future__ import annotations
+
+import logging
+
+from app.data import metro_micro
+from app.ingest import gbfs
+from app.routers.directions import DirectionsError, _api_key, fetch_directions
+from app.services import fares
+
+log = logging.getLogger(__name__)
+
+# ── Scoring weights (single source — cited in the methodology) ────────────────
+WEIGHTS = {"time": 1.0, "cost": 1.0, "transfer": 0.15}
+
+# ── Feasibility thresholds & speeds ───────────────────────────────────────────
+WALK_MAX_M = 2000          # a walk-only trip beyond this is not offered
+MICRO_MAX_M = 5000         # bike/scooter legs beyond this are not offered
+MICRO_ACCESS_MIN_M = 300   # only worth swapping a walk for micro past this
+MICRO_ACCESS_RADIUS_M = 300  # a rider will walk this far to reach a vehicle
+BIKE_SPEED_MPS = 4.2       # ~15 km/h
+SCOOTER_SPEED_MPS = 4.2    # ~15 km/h
+METRO_MICRO_WAIT_MIN = metro_micro.MAX_WAIT_MIN
+PARK_AND_RIDE_SHUTTLE_MIN = 15  # modeled shuttle + walk buffer at the venue
+
+MAX_OPTIONS = 12
+
+# LAX — trips touching it carry the TNC pickup surcharge and are a common
+# origin (tourists landing).  Simple radius test.
+_LAX = (33.9425, -118.4081)
+_LAX_RADIUS_M = 2000
+
+# Human-friendly label per primary mode.
+MODE_LABEL = {
+    "walk": "Walk",
+    "bike": "Bike",
+    "scooter": "Scooter",
+    "transit": "Transit",
+    "metro_micro": "Metro Micro",
+    "ridehail": "Rideshare",
+    "park_and_ride": "Park & Ride",
+}
+
+
+def _speed(vehicle_type: str) -> float:
+    return BIKE_SPEED_MPS if vehicle_type == "bike" else SCOOTER_SPEED_MPS
+
+
+def _is_lax(lat: float, lng: float) -> bool:
+    return gbfs.haversine_m(lat, lng, _LAX[0], _LAX[1]) <= _LAX_RADIUS_M
+
+
+def _micro_snapshot(lat: float, lng: float) -> dict:
+    """
+    What shared micromobility is available right at a point.
+
+    Returns {types: set[str], pricing: list[dict]} where types ⊆ {bike, scooter,
+    ebike}.  Isolated so tests can stub it without touching GBFS/Redis.
+    """
+    near = gbfs.get_nearby(lat, lng, MICRO_ACCESS_RADIUS_M)
+    types: set[str] = set()
+    for item in near["items"]:
+        if item["kind"] == "station":
+            avail = (item.get("num_bikes_available") or 0) + (item.get("num_ebikes_available") or 0)
+            if avail <= 0:
+                continue
+        types.add(item["vehicle_type"])
+    pricing: list[dict] = []
+    for plans in near["pricing"].values():
+        pricing.extend(plans)
+    return {"types": types, "pricing": pricing}
+
+
+def _label(primary_modes: list[str]) -> str:
+    return " → ".join(MODE_LABEL.get(m, m.title()) for m in primary_modes)
+
+
+def _leg(mode: str, distance_m, duration_s, polyline: str = "", steps: list | None = None) -> dict:
+    return {
+        "mode": mode,
+        "distance_m": distance_m,
+        "duration_s": duration_s,
+        "polyline": polyline,
+        "steps": steps or [],
+    }
+
+
+def _candidate(cid, primary_modes, minutes, cost, transfers, legs) -> dict:
+    return {
+        "id": cid,
+        "label": _label(primary_modes),
+        "modes": primary_modes,
+        "total_minutes": round(minutes, 1),
+        "total_cost_usd": round(cost, 2),
+        "cost_is_estimate": True,
+        "num_transfers": transfers,
+        "legs": legs,
+    }
+
+
+def _split_walk_ends(steps: list[dict]) -> tuple[list, list, list]:
+    """Return (leading_walk_steps, middle_steps, trailing_walk_steps)."""
+    n = len(steps)
+    i = 0
+    while i < n and steps[i].get("mode") == "walking":
+        i += 1
+    j = n
+    while j > i and steps[j - 1].get("mode") == "walking":
+        j -= 1
+    return steps[:i], steps[i:j], steps[j:]
+
+
+def _sum(steps: list[dict], field: str) -> float:
+    return float(sum(s.get(field, 0) or 0 for s in steps))
+
+
+def _transit_boardings(steps: list[dict]) -> int:
+    return sum(1 for s in steps if s.get("mode") == "transit")
+
+
+# ── Candidate builders ────────────────────────────────────────────────────────
+
+def _build_transit_candidates(origin, dest, departure_time, o_micro, d_micro) -> list[dict]:
+    """Transit baseline + micromobility access/egress variants composed on top."""
+    o = f"{origin[0]},{origin[1]}"
+    d = f"{dest[0]},{dest[1]}"
+    tr = fetch_directions(o, d, "transit", departure_time)
+    if not tr:
+        return []
+    steps = tr["steps"]
+    boardings = _transit_boardings(steps)
+    if boardings == 0:
+        return []  # Google returned a walking fallback — not a transit route
+
+    lead, mid, trail = _split_walk_ends(steps)
+    base_min = tr["duration_s"] / 60.0
+    base_cost = fares.metro_fare(boardings)
+    out: list[dict] = []
+
+    # Baseline transit (incidental walking is not a "primary" mode for filtering).
+    out.append(_candidate(
+        "transit", ["transit"], base_min, base_cost, max(0, boardings - 1),
+        [_leg("transit", tr["distance_m"], tr["duration_s"], tr["polyline"], steps)],
+    ))
+
+    lead_m, lead_s = _sum(lead, "distance_m"), _sum(lead, "duration_s")
+    trail_m, trail_s = _sum(trail, "distance_m"), _sum(trail, "duration_s")
+
+    def micro_leg_metrics(walk_m, walk_s, vtype, pricing):
+        micro_s = walk_m / _speed(vtype)
+        micro_cost = fares.micromobility_cost(micro_s / 60.0, vtype, pricing)
+        return micro_s, micro_cost, (walk_s - micro_s)
+
+    # Access variant: replace leading walk with an available micro vehicle.
+    access_types = o_micro["types"] if MICRO_ACCESS_MIN_M <= lead_m <= MICRO_MAX_M else set()
+    for vtype in sorted(access_types):
+        micro_s, micro_cost, saved = micro_leg_metrics(lead_m, lead_s, vtype, o_micro["pricing"])
+        legs = [
+            _leg(vtype, lead_m, micro_s, "", lead),
+            _leg("transit", tr["distance_m"], tr["duration_s"] - lead_s, tr["polyline"], mid + trail),
+        ]
+        out.append(_candidate(
+            f"transit+{vtype}-access", [vtype, "transit"],
+            base_min - saved / 60.0, base_cost + micro_cost, boardings,
+            legs,
+        ))
+
+    # Egress variant: replace trailing walk with an available micro vehicle.
+    egress_types = d_micro["types"] if MICRO_ACCESS_MIN_M <= trail_m <= MICRO_MAX_M else set()
+    for vtype in sorted(egress_types):
+        micro_s, micro_cost, saved = micro_leg_metrics(trail_m, trail_s, vtype, d_micro["pricing"])
+        legs = [
+            _leg("transit", tr["distance_m"], tr["duration_s"] - trail_s, tr["polyline"], lead + mid),
+            _leg(vtype, trail_m, micro_s, "", trail),
+        ]
+        out.append(_candidate(
+            f"transit+{vtype}-egress", ["transit", vtype],
+            base_min - saved / 60.0, base_cost + micro_cost, boardings,
+            legs,
+        ))
+
+    # Combined access + egress (single best-available pairing) to keep the set bounded.
+    if access_types and egress_types:
+        av = sorted(access_types)[0]
+        ev = sorted(egress_types)[0]
+        a_s, a_cost, a_saved = micro_leg_metrics(lead_m, lead_s, av, o_micro["pricing"])
+        e_s, e_cost, e_saved = micro_leg_metrics(trail_m, trail_s, ev, d_micro["pricing"])
+        legs = [
+            _leg(av, lead_m, a_s, "", lead),
+            _leg("transit", tr["distance_m"], tr["duration_s"] - lead_s - trail_s, tr["polyline"], mid),
+            _leg(ev, trail_m, e_s, "", trail),
+        ]
+        out.append(_candidate(
+            f"transit+{av}-access+{ev}-egress", [av, "transit", ev],
+            base_min - (a_saved + e_saved) / 60.0, base_cost + a_cost + e_cost, boardings + 1,
+            legs,
+        ))
+    return out
+
+
+def _build_direct_candidates(origin, dest, o_micro) -> list[dict]:
+    o = f"{origin[0]},{origin[1]}"
+    d = f"{dest[0]},{dest[1]}"
+    out: list[dict] = []
+
+    # Walk-only.
+    walk = fetch_directions(o, d, "walking")
+    if walk and walk["distance_m"] <= WALK_MAX_M:
+        out.append(_candidate(
+            "walk", ["walk"], walk["duration_s"] / 60.0, 0.0, 0,
+            [_leg("walk", walk["distance_m"], walk["duration_s"], walk["polyline"], walk["steps"])],
+        ))
+
+    # Bike / scooter end-to-end (one per available type, feasibility-gated).
+    bike = fetch_directions(o, d, "bicycling")
+    if bike and bike["distance_m"] <= MICRO_MAX_M:
+        for vtype in sorted(o_micro["types"]):
+            if vtype == "ebike":
+                cost_type = "bike"
+            else:
+                cost_type = vtype
+            minutes = bike["duration_s"] / 60.0
+            cost = fares.micromobility_cost(minutes, cost_type, o_micro["pricing"])
+            out.append(_candidate(
+                f"{vtype}-only", [vtype], minutes, cost, 0,
+                [_leg(vtype, bike["distance_m"], bike["duration_s"], bike["polyline"], bike["steps"])],
+            ))
+
+    # Rideshare (driving proxy) — always feasible where a road route exists.
+    drive = fetch_directions(o, d, "driving")
+    if drive:
+        lax = _is_lax(*origin) or _is_lax(*dest)
+        cost = fares.rideshare_estimate(drive["distance_m"], drive["duration_s"], lax_pickup=lax)
+        out.append(_candidate(
+            "rideshare", ["ridehail"], drive["duration_s"] / 60.0, cost, 0,
+            [_leg("ridehail", drive["distance_m"], drive["duration_s"], drive["polyline"], drive["steps"])],
+        ))
+    return out
+
+
+def _build_metro_micro_candidate(origin, dest) -> dict | None:
+    """Metro Micro only when BOTH endpoints share one of its two zones."""
+    o_zones = {z.id for z in metro_micro.zones_for_point(*origin)}
+    d_zones = {z.id for z in metro_micro.zones_for_point(*dest)}
+    if not (o_zones & d_zones):
+        return None
+    o = f"{origin[0]},{origin[1]}"
+    d = f"{dest[0]},{dest[1]}"
+    drive = fetch_directions(o, d, "driving")
+    if not drive:
+        return None
+    minutes = drive["duration_s"] / 60.0 + METRO_MICRO_WAIT_MIN
+    return _candidate(
+        "metro-micro", ["metro_micro"], minutes, metro_micro.BASE_FARE_USD, 0,
+        [_leg("metro_micro", drive["distance_m"], int(minutes * 60), drive["polyline"], drive["steps"])],
+    )
+
+
+def _build_park_and_ride_candidate(origin, dest, venue_price_min) -> dict | None:
+    """Modeled park-and-ride: drive to a sanctioned lot + shuttle/walk buffer."""
+    o = f"{origin[0]},{origin[1]}"
+    d = f"{dest[0]},{dest[1]}"
+    drive = fetch_directions(o, d, "driving")
+    if not drive:
+        return None
+    minutes = drive["duration_s"] / 60.0 + PARK_AND_RIDE_SHUTTLE_MIN
+    cost = fares.park_and_ride_estimate(venue_price_min)
+    return _candidate(
+        "park-and-ride", ["park_and_ride"], minutes, cost, 1,
+        [_leg("park_and_ride", drive["distance_m"], int(minutes * 60), drive["polyline"], drive["steps"])],
+    )
+
+
+# ── Ranking ───────────────────────────────────────────────────────────────────
+
+def _drop_dominated(cands: list[dict]) -> list[dict]:
+    """Remove options worse on BOTH time and cost than some other option."""
+    kept: list[dict] = []
+    for a in cands:
+        dominated = False
+        for b in cands:
+            if b is a:
+                continue
+            if (b["total_minutes"] <= a["total_minutes"]
+                    and b["total_cost_usd"] <= a["total_cost_usd"]
+                    and (b["total_minutes"] < a["total_minutes"]
+                         or b["total_cost_usd"] < a["total_cost_usd"])):
+                dominated = True
+                break
+        if not dominated:
+            kept.append(a)
+    return kept
+
+
+def _score_and_rank(cands: list[dict]) -> list[dict]:
+    if not cands:
+        return []
+    times = [c["total_minutes"] for c in cands]
+    costs = [c["total_cost_usd"] for c in cands]
+    tmin, tmax = min(times), max(times)
+    cmin, cmax = min(costs), max(costs)
+    for c in cands:
+        nt = 0.0 if tmax == tmin else (c["total_minutes"] - tmin) / (tmax - tmin)
+        nc = 0.0 if cmax == cmin else (c["total_cost_usd"] - cmin) / (cmax - cmin)
+        score = WEIGHTS["time"] * nt + WEIGHTS["cost"] * nc + WEIGHTS["transfer"] * c["num_transfers"]
+        c["score"] = round(score, 4)
+        c["score_breakdown"] = {
+            "time_norm": round(nt, 3),
+            "cost_norm": round(nc, 3),
+            "num_transfers": c["num_transfers"],
+            "weights": WEIGHTS,
+        }
+    # Deterministic ordering: lower score first, stable tie-breaks.
+    cands.sort(key=lambda c: (c["score"], c["total_minutes"], c["total_cost_usd"], c["id"]))
+    return cands
+
+
+def _allowed(candidate: dict, preferences: set[str] | None) -> bool:
+    if not preferences:
+        return True
+    return all(m in preferences for m in candidate["modes"])
+
+
+def optimize(
+    origin: tuple[float, float],
+    destination: tuple[float, float],
+    preferences: list[str] | None = None,
+    departure_time: int | None = None,
+    destination_venue_price_min: float | None = None,
+) -> dict:
+    """
+    Rank multimodal options for one origin→destination leg.  Deterministic.
+
+    `preferences` is the set of allowed primary mode keys (see MODE_LABEL); a
+    candidate using any mode outside it is filtered out before scoring.  Empty
+    or None means "all modes allowed".
+    """
+    # A missing Maps key is a server misconfiguration, not a per-candidate miss.
+    if not _api_key():
+        raise DirectionsError("Maps API key not configured", status_code=500)
+
+    prefs = set(preferences) if preferences else None
+
+    o_micro = _micro_snapshot(*origin)
+    d_micro = _micro_snapshot(*destination)
+
+    cands: list[dict] = []
+    # Each builder swallows "no route" (None) internally; upstream failures for a
+    # single mode shouldn't sink the whole request, so guard per group.
+    for builder in (
+        lambda: _build_transit_candidates(origin, destination, departure_time, o_micro, d_micro),
+        lambda: _build_direct_candidates(origin, destination, o_micro),
+    ):
+        try:
+            cands.extend(builder())
+        except DirectionsError as exc:
+            if exc.status_code == 500:
+                raise
+            log.warning("Route candidate group failed: %s", exc.detail)
+
+    mm = None
+    pnr = None
+    try:
+        mm = _build_metro_micro_candidate(origin, destination)
+        pnr = _build_park_and_ride_candidate(origin, destination, destination_venue_price_min)
+    except DirectionsError as exc:
+        if exc.status_code == 500:
+            raise
+        log.warning("Optional candidate failed: %s", exc.detail)
+    if mm:
+        cands.append(mm)
+    if pnr:
+        cands.append(pnr)
+
+    # Feasibility set is built; now apply preferences, dominance, cap, and score.
+    cands = [c for c in cands if _allowed(c, prefs)]
+    cands = _drop_dominated(cands)
+    ranked = _score_and_rank(cands)[:MAX_OPTIONS]
+
+    return {
+        "origin": {"lat": origin[0], "lng": origin[1]},
+        "destination": {"lat": destination[0], "lng": destination[1]},
+        "departure_time": departure_time,
+        "preferences": sorted(prefs) if prefs else None,
+        "weights": WEIGHTS,
+        "count": len(ranked),
+        "options": ranked,
+        "notes": [
+            "All costs are modeled estimates, not quotes.",
+            gbfs.ATTRIBUTION,
+        ],
+    }
