@@ -190,6 +190,17 @@ export interface MicromobilityResult {
   };
 }
 
+// ── Live transit (Swiftly GTFS-RT) ─────────────────────────────────────────────
+
+export interface TransitLiveStatus {
+  configured: boolean;
+  status: 'live' | 'no_service' | 'scheduled';
+  live: boolean | null;
+  vehicles_running: number;
+  line: string | null;
+  targets: string[];
+}
+
 // ── Route optimization engine ──────────────────────────────────────────────────
 
 export type RouteMode =
@@ -290,4 +301,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+
+  getTransitLive: (line: string) =>
+    request<TransitLiveStatus>(`/api/transit/live?line=${encodeURIComponent(line)}`),
 };

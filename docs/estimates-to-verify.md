@@ -74,3 +74,20 @@ pass should tighten them against the published service-area maps.
 | `MAX_WAIT_MIN` | 15 | metro.net | ☐ re-confirm |
 | Zone polygon: `lax-inglewood` (→ SoFi) | approximate | metro.net/micro | ☐ tighten |
 | Zone polygon: `altadena-pasadena-sierra-madre` (→ Rose Bowl) | approximate | metro.net/micro | ☐ tighten |
+
+---
+
+## Live transit (Swiftly GTFS-RT) — `app/ingest/transit_rt.py`
+
+Live **vehicle positions** work via Swiftly (`SWIFTLY_API_KEY`, server-side).
+Two follow-ons, not blockers for the demo:
+
+- **Rail feed access** — the `lametro-rail` agency currently returns **403** on
+  our key, so rail lines (A/B/C/D/E/K) fall back to "scheduled". Confirm the key
+  has rail scope or the correct Swiftly agency slug; adjust `SWIFTLY_AGENCIES`.
+- **True delay / next-arrival** — we surface "is the line running live + how many
+  vehicles", not per-stop arrival predictions. Those need the GTFS **static**
+  schedule loaded (FR-G1) to map a boarding stop → stop_id. Load static, then
+  add trip-updates.
+- Line label → route matching (`app/ingest/transit_rt.py::line_targets`) uses a
+  small rail letter→code map; re-check if Metro renumbers lines before the demo.

@@ -14,6 +14,9 @@ redis
 # HTTP client — used for Google Places proxy and GTFS-RT fetching
 httpx
 
+# GTFS-Realtime protobuf parsing (Swiftly live vehicle positions)
+gtfs-realtime-bindings
+
 # Retry helper for DB startup wait (used in main.py lifespan)
 tenacity
 

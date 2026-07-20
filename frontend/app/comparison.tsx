@@ -10,14 +10,24 @@ import {
   View,
 } from 'react-native';
 
+import { DeepLinkButtons } from '@/components/DeepLinkButtons';
 import { PolicyBanner } from '@/components/PolicyBanner';
 import { colors, radius, shadow, spacing } from '@/constants/theme';
-import { api, DirectionsResult } from '@/lib/api';
+import { api, DirectionsResult, type TransitLiveStatus } from '@/lib/api';
+import { linksForModes, type Place } from '@/lib/deeplinks';
 import { formatDistance, formatDuration } from '@/lib/polyline';
 import { useTrip } from '@/lib/store';
 
 const MODES = ['transit', 'walking', 'bicycling', 'driving'] as const;
 type Mode = (typeof MODES)[number];
+
+// Which route-engine mode keys each comparison mode maps to for deep links.
+const MODE_DEEPLINK_KEYS: Record<Mode, string[]> = {
+  transit: ['transit'],
+  walking: [],
+  bicycling: ['bike', 'scooter'],
+  driving: ['ridehail'],
+};
 
 const MODE_META: Record<
   Mode,
@@ -67,6 +77,20 @@ export default function ComparisonScreen() {
   const [results, setResults] = useState<Partial<Record<Mode, DirectionsResult>>>({});
   const [errors, setErrors] = useState<Partial<Record<Mode, string>>>({});
   const [loadingModes, setLoadingModes] = useState<Set<Mode>>(new Set());
+  const [liveStatus, setLiveStatus] = useState<TransitLiveStatus | null>(null);
+
+  // Once transit directions load, ask the backend whether that line is running
+  // live right now (Swiftly GTFS-RT). Silent + best-effort — falls back to schedule.
+  const transitResult = results.transit;
+  useEffect(() => {
+    if (!transitResult) { setLiveStatus(null); return; }
+    const step = transitResult.steps.find((s) => s.mode === 'transit');
+    const line = step?.transit_line_short ?? step?.transit_line;
+    if (!line) { setLiveStatus(null); return; }
+    let cancelled = false;
+    api.getTransitLive(line).then((s) => { if (!cancelled) setLiveStatus(s); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [transitResult]);
 
   useEffect(() => {
     if (!fromStop || !toStop) return;
@@ -102,6 +126,9 @@ export default function ComparisonScreen() {
       </SafeAreaView>
     );
   }
+
+  const originPlace: Place = { lat: fromStop.lat, lng: fromStop.lng, name: fromStop.name };
+  const destPlace: Place = { lat: toStop.lat, lng: toStop.lng, name: toStop.name };
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -214,6 +241,23 @@ export default function ComparisonScreen() {
                 <Text style={styles.modeError}>{error}</Text>
               )}
 
+              {/* Live running status for the transit line (Swiftly GTFS-RT). */}
+              {mode === 'transit' && liveStatus?.configured && liveStatus.status !== 'scheduled' && (
+                <View style={styles.liveRow}>
+                  <View
+                    style={[
+                      styles.liveDot,
+                      { backgroundColor: liveStatus.live ? colors.success : colors.mutedFg },
+                    ]}
+                  />
+                  <Text style={styles.liveText}>
+                    {liveStatus.live
+                      ? `Live · ${liveStatus.vehicles_running} vehicle${liveStatus.vehicles_running === 1 ? '' : 's'} running now`
+                      : 'No live vehicles on this line right now'}
+                  </Text>
+                </View>
+              )}
+
               {meta.discouraged && (
                 <View style={styles.discouragedNote}>
                   <Feather name="alert-triangle" size={13} color={colors.drivingWarning} />
@@ -223,6 +267,11 @@ export default function ComparisonScreen() {
                   </Text>
                 </View>
               )}
+
+              {/* Hand-off links to the relevant apps (no booking here). */}
+              <DeepLinkButtons
+                links={linksForModes(MODE_DEEPLINK_KEYS[mode], originPlace, destPlace)}
+              />
             </View>
           );
         })}
@@ -391,6 +440,21 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.muted,
     fontStyle: 'italic',
+  },
+  liveRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  liveDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  liveText: {
+    fontFamily: 'Barlow_600SemiBold',
+    fontSize: 12,
+    color: colors.foreground,
   },
   discouragedNote: {
     flexDirection: 'row',
