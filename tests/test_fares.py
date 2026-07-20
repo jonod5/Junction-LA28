@@ -33,8 +33,3 @@ def test_rideshare_applies_minimum_and_lax_fee():
     assert fares.rideshare_estimate(100, 60) == fares.RIDESHARE_MIN_FARE_USD
     with_lax = fares.rideshare_estimate(100, 60, lax_pickup=True)
     assert with_lax == round(fares.RIDESHARE_MIN_FARE_USD + fares.LAX_PICKUP_FEE_USD, 2)
-
-
-def test_park_and_ride_uses_venue_price_when_available():
-    assert fares.park_and_ride_estimate(12.0) == 12.0
-    assert fares.park_and_ride_estimate(None) == fares.PARK_AND_RIDE_DEFAULT_USD

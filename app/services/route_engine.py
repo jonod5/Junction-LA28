@@ -21,6 +21,13 @@ Methodology (this docstring is the source for the journal/poster write-up):
    set.  What a traveler *prefers* is expressed through preferences + scoring,
    not by pre-filtering the menu.
 
+   Park-and-ride is NOT currently offered as a candidate: modeling it
+   correctly needs real park-and-ride lot locations and the car-free-zone
+   data those lots sit outside of, neither of which exist yet.  A version that
+   just drove to the venue and added a flat time/cost buffer would misrepresent
+   the car-free framing the app exists to communicate.  Re-add once that data
+   lands (see PRD FR-R1, FR-C3).
+
 3. RANKING is a deterministic weighted score:
        score = w_time·norm(minutes) + w_cost·norm(cost) + w_transfer·transfers
    Time and cost are min-max normalized to 0–1 WITHIN the candidate set first,
@@ -55,7 +62,6 @@ MICRO_ACCESS_RADIUS_M = 300  # a rider will walk this far to reach a vehicle
 BIKE_SPEED_MPS = 4.2       # ~15 km/h
 SCOOTER_SPEED_MPS = 4.2    # ~15 km/h
 METRO_MICRO_WAIT_MIN = metro_micro.MAX_WAIT_MIN
-PARK_AND_RIDE_SHUTTLE_MIN = 15  # modeled shuttle + walk buffer at the venue
 
 MAX_OPTIONS = 12
 
@@ -72,7 +78,6 @@ MODE_LABEL = {
     "transit": "Transit",
     "metro_micro": "Metro Micro",
     "ridehail": "Rideshare",
-    "park_and_ride": "Park & Ride",
 }
 
 
@@ -290,21 +295,6 @@ def _build_metro_micro_candidate(origin, dest) -> dict | None:
     )
 
 
-def _build_park_and_ride_candidate(origin, dest, venue_price_min) -> dict | None:
-    """Modeled park-and-ride: drive to a sanctioned lot + shuttle/walk buffer."""
-    o = f"{origin[0]},{origin[1]}"
-    d = f"{dest[0]},{dest[1]}"
-    drive = fetch_directions(o, d, "driving")
-    if not drive:
-        return None
-    minutes = drive["duration_s"] / 60.0 + PARK_AND_RIDE_SHUTTLE_MIN
-    cost = fares.park_and_ride_estimate(venue_price_min)
-    return _candidate(
-        "park-and-ride", ["park_and_ride"], minutes, cost, 1,
-        [_leg("park_and_ride", drive["distance_m"], int(minutes * 60), drive["polyline"], drive["steps"])],
-    )
-
-
 # ── Ranking ───────────────────────────────────────────────────────────────────
 
 def _drop_dominated(cands: list[dict]) -> list[dict]:
@@ -360,7 +350,6 @@ def optimize(
     destination: tuple[float, float],
     preferences: list[str] | None = None,
     departure_time: int | None = None,
-    destination_venue_price_min: float | None = None,
 ) -> dict:
     """
     Rank multimodal options for one origin→destination leg.  Deterministic.
@@ -393,18 +382,14 @@ def optimize(
             log.warning("Route candidate group failed: %s", exc.detail)
 
     mm = None
-    pnr = None
     try:
         mm = _build_metro_micro_candidate(origin, destination)
-        pnr = _build_park_and_ride_candidate(origin, destination, destination_venue_price_min)
     except DirectionsError as exc:
         if exc.status_code == 500:
             raise
         log.warning("Optional candidate failed: %s", exc.detail)
     if mm:
         cands.append(mm)
-    if pnr:
-        cands.append(pnr)
 
     # Feasibility set is built; now apply preferences, dominance, cap, and score.
     cands = [c for c in cands if _allowed(c, prefs)]

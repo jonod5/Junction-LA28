@@ -193,7 +193,7 @@ export interface MicromobilityResult {
 // ── Route optimization engine ──────────────────────────────────────────────────
 
 export type RouteMode =
-  | 'walk' | 'bike' | 'scooter' | 'transit' | 'metro_micro' | 'ridehail' | 'park_and_ride';
+  | 'walk' | 'bike' | 'scooter' | 'transit' | 'metro_micro' | 'ridehail';
 
 export interface RouteLeg {
   mode: string;
@@ -237,7 +237,6 @@ export interface RouteOptimizeRequest {
   destination: { lat: number; lng: number };
   preferences?: RouteMode[] | null;
   departure_time?: number | null;
-  destination_venue_id?: number | null;
 }
 
 // ── API ───────────────────────────────────────────────────────────────────────

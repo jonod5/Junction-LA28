@@ -49,14 +49,13 @@ enterprise-gated — deferred, PRD FR-D3).
 | `RIDESHARE_MIN_FARE_USD` | $8.00 | composite LA rate cards, 2026-07 | ☐ verify |
 | `LAX_PICKUP_FEE_USD` | $4.00 | flylax.com TNC info | ☐ verify |
 
-## Park-and-ride — `app/services/fares.py`
+## Park-and-ride — deferred, not yet in the engine
 
-| Constant | Value | Source | Status |
-|---|---|---|---|
-| `PARK_AND_RIDE_DEFAULT_USD` | $15.00 | modeled event-day sanctioned-lot | ☐ verify |
-
-Note: when a destination venue has a collected parking price, that hand-verified
-value is used instead of this default.
+Removed from the candidate set (2026-07-19) rather than shipped as a
+placeholder. A version that just drove to the venue and added a flat buffer
+would misrepresent the car-free framing the app exists to communicate.
+Re-add once real park-and-ride lot locations and the car-free-zone data those
+lots sit outside of are available (PRD FR-R1, FR-C3).
 
 ---
 

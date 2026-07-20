@@ -50,11 +50,6 @@ LAX_PICKUP_FEE_USD = 4.00
 # anchor for the cost layer.
 METRO_MICRO_FLAT_USD = 2.50  # see app.data.metro_micro.BASE_FARE_USD
 
-# ── Park-and-ride ─────────────────────────────────────────────────────────────
-# When we have a venue's collected parking price we use it; otherwise this
-# modeled event-day sanctioned-lot estimate stands in.  # VERIFY before 8/5
-PARK_AND_RIDE_DEFAULT_USD = 15.00
-
 _METERS_PER_MILE = 1609.34
 
 
@@ -124,10 +119,3 @@ def rideshare_estimate(distance_m: float, duration_s: float, lax_pickup: bool = 
     if lax_pickup:
         fare += LAX_PICKUP_FEE_USD
     return round(fare, 2)
-
-
-def park_and_ride_estimate(venue_price_min: float | None = None) -> float:
-    """Sanctioned-lot cost — venue's collected price if we have it, else modeled."""
-    if venue_price_min is not None and venue_price_min >= 0:
-        return round(float(venue_price_min), 2)
-    return PARK_AND_RIDE_DEFAULT_USD
