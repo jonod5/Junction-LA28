@@ -20,7 +20,8 @@ import logging
 import os
 
 import httpx
-import redis as redis_lib
+
+from app.cache import get_redis
 
 log = logging.getLogger(__name__)
 
@@ -32,11 +33,6 @@ _DEFAULT_URLS = (
     "https://api.metro.net/LACMTA/vehicle_positions/all,"
     "https://api.metro.net/LACMTA_Rail/vehicle_positions/all"
 )
-
-
-def _get_redis() -> redis_lib.Redis:
-    url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
-    return redis_lib.from_url(url, decode_responses=True)
 
 
 def _rt_urls() -> list[str]:
@@ -99,7 +95,7 @@ def fetch_vehicles() -> list[dict]:
                 # Log and continue — one agency failing should not hide the other.
                 log.warning("Vehicle fetch failed for %s: %s", url, exc)
 
-    r = _get_redis()
+    r = get_redis()
     r.setex(CACHE_KEY, CACHE_TTL, json.dumps(vehicles))
     log.debug("Cached %d vehicles in Redis (TTL %ds)", len(vehicles), CACHE_TTL)
     return vehicles
@@ -107,7 +103,7 @@ def fetch_vehicles() -> list[dict]:
 
 def get_cached_vehicles() -> list[dict] | None:
     """Return the cached vehicle list, or None if the key has expired."""
-    r = _get_redis()
+    r = get_redis()
     raw = r.get(CACHE_KEY)
     if raw is None:
         return None

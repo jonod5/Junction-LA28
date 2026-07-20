@@ -141,6 +141,55 @@ export interface VenueDetail {
   congestion_tdm: CongestionTdm | null;
 }
 
+// ── Micromobility (live GBFS + static Metro Micro) ─────────────────────────────
+
+export interface MicromobilityItem {
+  provider: string;
+  kind: 'vehicle' | 'station';
+  vehicle_type: 'bike' | 'ebike' | 'scooter';
+  lat: number;
+  lng: number;
+  id: string | null;
+  distance_m: number;
+  // Present on stations only:
+  name?: string;
+  num_bikes_available?: number | null;
+  num_ebikes_available?: number | null;
+  num_docks_available?: number | null;
+}
+
+export interface MetroMicroZoneRef {
+  id: string;
+  name: string;
+}
+
+export interface MetroMicroService {
+  available: boolean;
+  zones: MetroMicroZoneRef[];
+  base_fare_usd: number;
+  reduced_fare_usd: number;
+  transfer_fare_usd: number;
+  transfer_window_min: number;
+  max_wait_min: number;
+  booking_url: string;
+  fare_is_estimate: boolean;
+  attribution: string;
+}
+
+export interface MicromobilityResult {
+  query: { lat: number; lng: number; radius_m: number };
+  count: number;
+  items: MicromobilityItem[];
+  pricing: Record<string, unknown[]>;
+  metro_micro: MetroMicroService;
+  metadata: {
+    attribution: string;
+    license: string;
+    cache_ttl_max_s: number;
+    errors: Record<string, string[]>;
+  };
+}
+
 // ── API ───────────────────────────────────────────────────────────────────────
 
 export const api = {
@@ -181,4 +230,9 @@ export const api = {
   ) => request<Leg>(`/api/trips/${tripId}/legs`, { method: 'PUT', body: JSON.stringify(body) }),
 
   getVenue: (id: number) => request<VenueDetail>(`/api/venues/${id}`),
+
+  getMicromobility: (lat: number, lng: number, radiusM = 800) =>
+    request<MicromobilityResult>(
+      `/api/micromobility?lat=${lat}&lng=${lng}&radius_m=${radiusM}`,
+    ),
 };

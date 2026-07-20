@@ -4,10 +4,11 @@ import { useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { DirectionStep } from '@/lib/api';
+import { api, DirectionStep, type MicromobilityItem } from '@/lib/api';
 import { colors, radius, spacing } from '@/constants/theme';
 import { decodePolyline, formatDistance, formatDuration } from '@/lib/polyline';
 import { useTrip } from '@/lib/store';
+import { VENUES } from '@/constants/venues';
 import {
   VENUE_TRANSIT,
   TRANSIT_LAYER_CONFIG,
@@ -69,6 +70,71 @@ function makeTransitIcon(type: TransitLayer): google.maps.Icon {
     scaledSize: new window.google.maps.Size(size, size),
     anchor: new window.google.maps.Point(r, r),
   };
+}
+
+// Live GBFS micromobility — distinct look from the static hand-collected zones.
+const LIVE_COLORS: Record<MicromobilityItem['vehicle_type'], string> = {
+  scooter: '#4D7C0F', // green
+  bike: '#0891B2',    // cyan
+  ebike: '#7C3AED',   // violet — electric
+};
+const LIVE_GLYPH: Record<MicromobilityItem['vehicle_type'], string> = {
+  scooter: 'S',
+  bike: 'B',
+  ebike: 'E',
+};
+
+function liveItemCount(item: MicromobilityItem): number | null {
+  if (item.kind !== 'station') return null;
+  const bikes = item.num_bikes_available ?? 0;
+  const ebikes = item.num_ebikes_available ?? 0;
+  return bikes + ebikes;
+}
+
+function makeLiveIcon(item: MicromobilityItem): google.maps.Icon {
+  const fill = LIVE_COLORS[item.vehicle_type] ?? colors.secondary;
+  const count = liveItemCount(item);
+  const text = count != null ? String(count) : LIVE_GLYPH[item.vehicle_type];
+  const size = 20;
+  const r = size / 2;
+  // Diamond outline distinguishes live vehicles from round static markers.
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}">
+    <rect x="2" y="2" width="${size - 4}" height="${size - 4}" rx="4"
+      transform="rotate(45 ${r} ${r})" fill="${fill}" stroke="white" stroke-width="2"/>
+    <text x="${r}" y="${r + 3.5}" text-anchor="middle" fill="white"
+      font-size="9" font-weight="bold" font-family="system-ui,sans-serif">${text}</text>
+  </svg>`;
+  return {
+    url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
+    scaledSize: new window.google.maps.Size(size, size),
+    anchor: new window.google.maps.Point(r, r),
+  };
+}
+
+const LIVE_TYPE_LABEL: Record<MicromobilityItem['vehicle_type'], string> = {
+  scooter: 'Scooter',
+  bike: 'Bike',
+  ebike: 'E-bike',
+};
+
+function liveInfoHtml(item: MicromobilityItem): string {
+  const fill = LIVE_COLORS[item.vehicle_type] ?? colors.secondary;
+  const providerName = item.provider
+    .split('-')
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+  const count = liveItemCount(item);
+  return [
+    `<div style="font-family:system-ui,sans-serif;max-width:220px;line-height:1.5;padding:2px 0">`,
+    `<div style="display:inline-block;background:${fill};color:#fff;padding:2px 8px;border-radius:8px;font-size:10px;font-weight:700;margin-bottom:5px">LIVE · ${LIVE_TYPE_LABEL[item.vehicle_type]}</div>`,
+    `<div style="font-size:12px;font-weight:700;color:#1F2937">${item.name ?? providerName}</div>`,
+    `<div style="font-size:11px;color:#4B5563">${providerName}</div>`,
+    item.kind === 'station' && count != null
+      ? `<div style="font-size:11px;color:#6B7280;margin-top:2px">${count} available${item.num_docks_available != null ? ` · ${item.num_docks_available} docks` : ''}</div>`
+      : `<div style="font-size:11px;color:#6B7280;margin-top:2px">Available now</div>`,
+    `<div style="font-size:10px;color:#9CA3AF;margin-top:3px">${Math.round(item.distance_m)} m away · GBFS</div>`,
+    `</div>`,
+  ].join('');
 }
 
 const VENUE_NAME: Record<number, string> = {
@@ -225,6 +291,7 @@ export default function MapWebScreen() {
   const hoverWindowRef = useRef<google.maps.InfoWindow | null>(null);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const transitMarkersRef = useRef<google.maps.Marker[]>([]);
+  const liveMarkersRef = useRef<google.maps.Marker[]>([]);
 
   const [mapError, setMapError] = useState<string | null>(null);
   const [mapReady, setMapReady] = useState(false);
@@ -233,6 +300,11 @@ export default function MapWebScreen() {
   const [layerVisibility, setLayerVisibility] = useState<Record<TransitLayer, boolean>>({
     rail: true, bus: true, bike: true, scooter: true, dropoff: true,
   });
+  // Live GBFS micromobility — off by default so we don't fetch until asked.
+  const [liveEnabled, setLiveEnabled] = useState(false);
+  const [liveItems, setLiveItems] = useState<MicromobilityItem[]>([]);
+  const [liveLoading, setLiveLoading] = useState(false);
+  const [liveError, setLiveError] = useState<string | null>(null);
 
   const stops = [...(trip?.stops ?? [])].sort((a, b) => a.order_index - b.order_index);
   const legs = trip?.legs ?? [];
@@ -476,6 +548,76 @@ export default function MapWebScreen() {
     };
   }, [mapReady, layerVisibility]);
 
+  // Fetch live GBFS availability around all 6 venues when the layer is on.
+  // Backend is cache-first so these calls are cheap; failures leave the static
+  // zones untouched and just surface a small "unavailable" note.
+  useEffect(() => {
+    if (!liveEnabled) {
+      setLiveItems([]);
+      setLiveError(null);
+      return;
+    }
+    let cancelled = false;
+    setLiveLoading(true);
+    setLiveError(null);
+    Promise.all(
+      VENUES.map((v) =>
+        api.getMicromobility(v.lat, v.lng, 800).catch(() => null),
+      ),
+    )
+      .then((results) => {
+        if (cancelled) return;
+        const seen = new Set<string>();
+        const merged: MicromobilityItem[] = [];
+        let anyOk = false;
+        for (const res of results) {
+          if (!res) continue;
+          anyOk = true;
+          for (const item of res.items) {
+            const key = `${item.provider}:${item.kind}:${item.id ?? `${item.lat},${item.lng}`}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            merged.push(item);
+          }
+        }
+        setLiveItems(merged);
+        setLiveError(anyOk ? null : 'Live feeds unavailable — showing static zones');
+      })
+      .finally(() => {
+        if (!cancelled) setLiveLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [liveEnabled]);
+
+  // Render live GBFS markers. Distinct diamond icons keep them visually apart
+  // from the hand-collected static zone markers, which always stay visible.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    liveMarkersRef.current.forEach((m) => m.setMap(null));
+    liveMarkersRef.current = [];
+    if (!liveEnabled) return;
+    liveItems.forEach((item) => {
+      const marker = new window.google.maps.Marker({
+        position: { lat: item.lat, lng: item.lng },
+        map,
+        icon: makeLiveIcon(item),
+        title: item.name ?? item.provider,
+        zIndex: 14,
+        optimized: false,
+      });
+      marker.addListener('click', () => {
+        clickWindowRef.current?.setContent(liveInfoHtml(item));
+        clickWindowRef.current?.open(map, marker);
+      });
+      liveMarkersRef.current.push(marker);
+    });
+    return () => {
+      liveMarkersRef.current.forEach((m) => m.setMap(null));
+      liveMarkersRef.current = [];
+    };
+  }, [mapReady, liveEnabled, liveItems]);
+
   const hasRoutes = legs.length > 0;
   const summaryLine = [
     `${legs.length} leg${legs.length !== 1 ? 's' : ''}`,
@@ -544,6 +686,35 @@ export default function MapWebScreen() {
               </div>
             );
           })}
+
+          {/* Live GBFS micromobility toggle */}
+          <div style={{ borderTop: '1px solid #E5E7EB', marginTop: 4, marginBottom: 4 }} />
+          <div style={{ ...LEGEND_LABEL, fontSize: 9, color: '#9CA3AF', letterSpacing: '0.06em', marginBottom: 4 }}>
+            LIVE
+          </div>
+          <div
+            onClick={() => setLiveEnabled((v) => !v)}
+            style={{ ...LEGEND_ROW, cursor: 'pointer', opacity: liveEnabled ? 1 : 0.5 }}
+          >
+            <div style={{
+              width: 18, height: 18,
+              background: liveEnabled ? LIVE_COLORS.scooter : '#9CA3AF',
+              transform: 'rotate(45deg)', borderRadius: 3,
+              flexShrink: 0,
+            }} />
+            <span style={{ ...LEGEND_LABEL, fontSize: 11, color: liveEnabled ? '#374151' : '#9CA3AF' }}>
+              Bikes &amp; scooters
+            </span>
+          </div>
+          {liveEnabled && (
+            <div style={{ ...LEGEND_LABEL, fontSize: 10, color: '#9CA3AF', maxWidth: 130, lineHeight: '1.3', marginTop: 2 }}>
+              {liveLoading
+                ? 'Loading live availability…'
+                : liveError
+                  ? liveError
+                  : `${liveItems.length} nearby · updates on refresh`}
+            </div>
+          )}
         </div>
       )}
 

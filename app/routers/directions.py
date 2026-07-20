@@ -30,8 +30,9 @@ import re
 from enum import StrEnum
 
 import httpx
-import redis as redis_lib
 from fastapi import APIRouter, HTTPException, Query
+
+from app.cache import get_redis
 
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["directions"])
@@ -45,12 +46,6 @@ class TravelMode(StrEnum):
     transit = "transit"
     walking = "walking"
     bicycling = "bicycling"
-
-
-def _get_redis() -> redis_lib.Redis:
-    # Reuse the same connection pattern as gtfs_rt.py.
-    url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
-    return redis_lib.from_url(url, decode_responses=True)
 
 
 def _cache_key(origin: str, destination: str, mode: str) -> str:
@@ -173,7 +168,7 @@ def get_directions(
         raise HTTPException(status_code=500, detail="Maps API key not configured")
 
     cache_key = _cache_key(origin, destination, str(mode))
-    r = _get_redis()
+    r = get_redis()
 
     # ── Cache hit ─────────────────────────────────────────────────────────────
     cached = r.get(cache_key)
