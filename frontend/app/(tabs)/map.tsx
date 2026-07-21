@@ -64,13 +64,13 @@ export default function MapScreen() {
         <View style={styles.emptyContainer}>
           <Feather name="map" size={48} color={colors.muted} />
           <Text style={styles.emptyTitle}>No venues yet</Text>
-          <Text style={styles.emptyHint}>Add venues in the Builder tab to see them on the map</Text>
+          <Text style={styles.emptyHint}>Add venues in the Planner tab first</Text>
           <Pressable
             onPress={() => router.push('/')}
             accessibilityRole="button"
             style={({ pressed }) => [styles.goBtn, pressed && styles.goBtnPressed]}
           >
-            <Text style={styles.goBtnText}>Go to Builder</Text>
+            <Text style={styles.goBtnText}>Go to Planner</Text>
           </Pressable>
         </View>
       </SafeAreaView>

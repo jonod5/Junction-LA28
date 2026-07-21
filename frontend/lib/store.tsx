@@ -1,5 +1,12 @@
 import React, { createContext, useCallback, useContext, useState } from 'react';
-import { api, DirectionStep, Leg, Stop, Trip } from './api';
+import { api, DirectionStep, Leg, RouteMode, RouteOptimizeResult, Stop, Trip } from './api';
+
+/** All non-car modes the route engine can rank (mirrors route_engine.MODE_LABEL). */
+export const ROUTE_MODES: RouteMode[] = ['transit', 'metro_micro', 'bike', 'scooter', 'walk', 'ridehail'];
+
+function legKey(fromId: number, toId: number): string {
+  return `${fromId}-${toId}`;
+}
 
 interface TripContextValue {
   trip: Trip | null;
@@ -14,6 +21,19 @@ interface TripContextValue {
   /** Per-leg step data keyed by "fromStopId-toStopId" — used by map for segment rendering */
   directionSteps: Record<string, DirectionStep[]>;
   saveDirectionSteps: (fromId: number, toId: number, steps: DirectionStep[]) => void;
+
+  // ── Mode preferences (session-only; feeds /api/routes/optimize) ────────────
+  /** null = not chosen yet (onboarding not completed); array = explicit allow-list. */
+  preferences: RouteMode[] | null;
+  setPreferences: (modes: RouteMode[]) => void;
+
+  // ── Route optimization engine results, per consecutive stop pair ───────────
+  routeOptions: Record<string, RouteOptimizeResult | null>;
+  routeOptionsLoading: Record<string, boolean>;
+  routeOptionsError: Record<string, string | null>;
+  selectedOptionId: Record<string, string | null>;
+  optimizeLeg: (from: Stop, to: Stop) => Promise<void>;
+  selectRouteOption: (fromId: number, toId: number, optionId: string) => void;
 }
 
 const TripContext = createContext<TripContextValue | null>(null);
@@ -24,7 +44,17 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [directionSteps, setDirectionSteps] = useState<Record<string, DirectionStep[]>>({});
 
+  const [preferences, setPreferencesState] = useState<RouteMode[] | null>(null);
+  const [routeOptions, setRouteOptions] = useState<Record<string, RouteOptimizeResult | null>>({});
+  const [routeOptionsLoading, setRouteOptionsLoading] = useState<Record<string, boolean>>({});
+  const [routeOptionsError, setRouteOptionsError] = useState<Record<string, string | null>>({});
+  const [selectedOptionId, setSelectedOptionId] = useState<Record<string, string | null>>({});
+
   const clearError = useCallback(() => setError(null), []);
+
+  const setPreferences = useCallback((modes: RouteMode[]) => {
+    setPreferencesState(modes);
+  }, []);
 
   const run = useCallback(async <T,>(fn: () => Promise<T>): Promise<T | null> => {
     setLoading(true);
@@ -116,9 +146,45 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
     setDirectionSteps((prev) => ({ ...prev, [`${fromId}-${toId}`]: steps }));
   }, []);
 
+  const optimizeLeg = useCallback(
+    async (from: Stop, to: Stop): Promise<void> => {
+      const key = legKey(from.id, to.id);
+      setRouteOptionsLoading((prev) => ({ ...prev, [key]: true }));
+      setRouteOptionsError((prev) => ({ ...prev, [key]: null }));
+      try {
+        const result = await api.optimizeRoutes({
+          origin: { lat: from.lat, lng: from.lng },
+          destination: { lat: to.lat, lng: to.lng },
+          preferences,
+        });
+        setRouteOptions((prev) => ({ ...prev, [key]: result }));
+        // Default to the top-ranked (best-scoring) option.
+        setSelectedOptionId((prev) => ({ ...prev, [key]: result.options[0]?.id ?? null }));
+      } catch (e: unknown) {
+        setRouteOptionsError((prev) => ({
+          ...prev,
+          [key]: e instanceof Error ? e.message : 'Could not compute route options',
+        }));
+      } finally {
+        setRouteOptionsLoading((prev) => ({ ...prev, [key]: false }));
+      }
+    },
+    [preferences],
+  );
+
+  const selectRouteOption = useCallback((fromId: number, toId: number, optionId: string) => {
+    setSelectedOptionId((prev) => ({ ...prev, [legKey(fromId, toId)]: optionId }));
+  }, []);
+
   return (
     <TripContext.Provider
-      value={{ trip, loading, error, clearError, createTrip, addStop, removeStop, reorderStops, saveLeg, directionSteps, saveDirectionSteps }}
+      value={{
+        trip, loading, error, clearError, createTrip, addStop, removeStop, reorderStops, saveLeg,
+        directionSteps, saveDirectionSteps,
+        preferences, setPreferences,
+        routeOptions, routeOptionsLoading, routeOptionsError, selectedOptionId,
+        optimizeLeg, selectRouteOption,
+      }}
     >
       {children}
     </TripContext.Provider>

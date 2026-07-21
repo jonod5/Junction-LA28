@@ -128,13 +128,13 @@ export default function RoutesScreen() {
         <View style={styles.emptyContainer}>
           <Feather name="navigation" size={48} color={colors.muted} />
           <Text style={styles.emptyTitle}>No routes yet</Text>
-          <Text style={styles.emptyHint}>Add at least 2 venues in the Builder tab</Text>
+          <Text style={styles.emptyHint}>Add at least 2 venues in the Planner tab</Text>
           <Pressable
             onPress={() => router.push('/')}
             accessibilityRole="button"
             style={({ pressed }) => [styles.goBtn, pressed && { opacity: 0.8 }]}
           >
-            <Text style={styles.goBtnText}>Go to Builder</Text>
+            <Text style={styles.goBtnText}>Go to Planner</Text>
           </Pressable>
         </View>
       </SafeAreaView>

@@ -38,33 +38,16 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'My Trip',
-          tabBarLabel: 'Builder',
-          tabBarIcon: ({ color, size }) => (
-            <Feather name="list" size={size} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="map"
-        options={{
-          title: 'Map',
-          tabBarLabel: 'Map',
+          title: 'Planner',
+          tabBarLabel: 'Planner',
           tabBarIcon: ({ color, size }) => (
             <Feather name="map" size={size} color={color} />
           ),
         }}
       />
-      <Tabs.Screen
-        name="routes"
-        options={{
-          title: 'Routes',
-          tabBarLabel: 'Routes',
-          tabBarIcon: ({ color, size }) => (
-            <Feather name="navigation" size={size} color={color} />
-          ),
-        }}
-      />
+      {/* Native-only fallback screens (web replaces both with index.web.tsx). */}
+      <Tabs.Screen name="map" options={{ href: null }} />
+      <Tabs.Screen name="routes" options={{ href: null }} />
     </Tabs>
   );
 }
