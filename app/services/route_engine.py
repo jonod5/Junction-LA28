@@ -7,9 +7,15 @@ Methodology (this docstring is the source for the journal/poster write-up):
    modeled as [access] + [backbone] + [egress].  We start from Google's transit
    result (which itself already graph-routes rail/bus with walking access) and
    then compose variants by replacing the leading/trailing walking portion with
-   shared micromobility WHERE a live GBFS vehicle is actually available and the
-   distance is sensible.  Direct single-mode candidates (walk-only, bike/scooter
-   only, rideshare, Metro Micro) are added on the same feasibility terms.  So
+   shared micromobility WHERE a live GBFS vehicle is actually available, the
+   distance is sensible, AND that walking portion is long enough (≥10 min) that
+   riding it is a meaningfully different option — a 4-minute walk swapped for a
+   scooter is a near-duplicate of plain transit, not a real alternative.  The
+   swapped-in portion keeps the same streets (a scooter/bike takes the same
+   route a pedestrian would here) but is relabeled to the vehicle's mode and
+   paced at the vehicle's speed, so it renders and reads as "Scooter", not as
+   another walk.  Direct single-mode candidates (walk-only, bike/scooter only,
+   rideshare, Metro Micro) are added on their own feasibility terms.  So
    combinations like "scooter → rail → walk" or "bike end-to-end" emerge from
    the segment options rather than being enumerated by hand.
 
@@ -49,6 +55,7 @@ out of can never surface as the top recommendation.
 from __future__ import annotations
 
 import logging
+import re
 
 from app.data import metro_micro
 from app.ingest import gbfs
@@ -62,7 +69,10 @@ WEIGHTS = {"time": 1.0, "cost": 1.0, "transfer": 0.15}
 
 # ── Feasibility thresholds & speeds ───────────────────────────────────────────
 MICRO_MAX_M = 5000         # bike/scooter legs beyond this are not offered
-MICRO_ACCESS_MIN_M = 300   # only worth swapping a walk for micro past this
+# Below this, swapping a transit leg's walking portion for a scooter/bike
+# barely changes the time and produces a near-duplicate option — not worth
+# offering as a separate choice.
+MICRO_ACCESS_MIN_WALK_S = 600  # 10 minutes
 MICRO_ACCESS_RADIUS_M = 300  # a rider will walk this far to reach a vehicle
 BIKE_SPEED_MPS = 4.2       # ~15 km/h
 SCOOTER_SPEED_MPS = 4.2    # ~15 km/h
@@ -196,17 +206,38 @@ def _build_transit_candidates(origin, dest, departure_time, o_micro, d_micro) ->
     lead_m, lead_s = _sum(lead, "distance_m"), _sum(lead, "duration_s")
     trail_m, trail_s = _sum(trail, "distance_m"), _sum(trail, "duration_s")
 
-    def micro_leg_metrics(walk_m, walk_s, vtype, pricing):
+    def micro_leg_metrics(walk_m, walk_s, walk_steps, vtype, pricing):
+        """
+        Swap a walking portion for a micro vehicle: same streets, faster pace.
+
+        Returns (duration_s, cost, time_saved_s, relabeled_steps).  The path
+        genuinely is the same route a scooter/bike would take, so we keep each
+        step's polyline but relabel its mode (so the map colors and the step
+        list show "Scooter"/"Bike", not a walk), swap any leading "Walk" in
+        the instruction text for the vehicle's name, and scale each step's
+        own duration by the same factor the leg total was scaled by —
+        otherwise the expanded step list would still read at walking pace.
+        """
         micro_s = walk_m / _speed(vtype)
         micro_cost = fares.micromobility_cost(micro_s / 60.0, vtype, pricing)
-        return micro_s, micro_cost, (walk_s - micro_s)
+        scale = micro_s / walk_s if walk_s > 0 else 1.0
+        label = MODE_LABEL[vtype]
+        relabeled = []
+        for s in walk_steps:
+            step = {**s, "mode": vtype, "duration_s": round(s.get("duration_s", 0) * scale)}
+            instr = step.get("instruction") or ""
+            step["instruction"] = re.sub(r"^walk\b", label, instr, count=1, flags=re.IGNORECASE)
+            relabeled.append(step)
+        return micro_s, micro_cost, (walk_s - micro_s), relabeled
 
-    # Access variant: replace leading walk with an available micro vehicle.
-    access_types = o_micro["types"] if MICRO_ACCESS_MIN_M <= lead_m <= MICRO_MAX_M else set()
+    # Access variant: replace leading walk with an available micro vehicle —
+    # only when that walk is long enough for the swap to be a meaningfully
+    # different option, not a near-duplicate of the plain transit route.
+    access_types = o_micro["types"] if lead_s >= MICRO_ACCESS_MIN_WALK_S and lead_m <= MICRO_MAX_M else set()
     for vtype in sorted(access_types):
-        micro_s, micro_cost, saved = micro_leg_metrics(lead_m, lead_s, vtype, o_micro["pricing"])
+        micro_s, micro_cost, saved, relabeled = micro_leg_metrics(lead_m, lead_s, lead, vtype, o_micro["pricing"])
         legs = [
-            _leg(vtype, lead_m, micro_s, "", lead),
+            _leg(vtype, lead_m, micro_s, "", relabeled),
             _leg("transit", tr["distance_m"], tr["duration_s"] - lead_s, tr["polyline"], mid + trail),
         ]
         out.append(_candidate(
@@ -216,12 +247,12 @@ def _build_transit_candidates(origin, dest, departure_time, o_micro, d_micro) ->
         ))
 
     # Egress variant: replace trailing walk with an available micro vehicle.
-    egress_types = d_micro["types"] if MICRO_ACCESS_MIN_M <= trail_m <= MICRO_MAX_M else set()
+    egress_types = d_micro["types"] if trail_s >= MICRO_ACCESS_MIN_WALK_S and trail_m <= MICRO_MAX_M else set()
     for vtype in sorted(egress_types):
-        micro_s, micro_cost, saved = micro_leg_metrics(trail_m, trail_s, vtype, d_micro["pricing"])
+        micro_s, micro_cost, saved, relabeled = micro_leg_metrics(trail_m, trail_s, trail, vtype, d_micro["pricing"])
         legs = [
             _leg("transit", tr["distance_m"], tr["duration_s"] - trail_s, tr["polyline"], lead + mid),
-            _leg(vtype, trail_m, micro_s, "", trail),
+            _leg(vtype, trail_m, micro_s, "", relabeled),
         ]
         out.append(_candidate(
             f"transit+{vtype}-egress", ["transit", vtype],
@@ -233,12 +264,12 @@ def _build_transit_candidates(origin, dest, departure_time, o_micro, d_micro) ->
     if access_types and egress_types:
         av = sorted(access_types)[0]
         ev = sorted(egress_types)[0]
-        a_s, a_cost, a_saved = micro_leg_metrics(lead_m, lead_s, av, o_micro["pricing"])
-        e_s, e_cost, e_saved = micro_leg_metrics(trail_m, trail_s, ev, d_micro["pricing"])
+        a_s, a_cost, a_saved, a_steps = micro_leg_metrics(lead_m, lead_s, lead, av, o_micro["pricing"])
+        e_s, e_cost, e_saved, e_steps = micro_leg_metrics(trail_m, trail_s, trail, ev, d_micro["pricing"])
         legs = [
-            _leg(av, lead_m, a_s, "", lead),
+            _leg(av, lead_m, a_s, "", a_steps),
             _leg("transit", tr["distance_m"], tr["duration_s"] - lead_s - trail_s, tr["polyline"], mid),
-            _leg(ev, trail_m, e_s, "", trail),
+            _leg(ev, trail_m, e_s, "", e_steps),
         ]
         out.append(_candidate(
             f"transit+{av}-access+{ev}-egress", [av, "transit", ev],

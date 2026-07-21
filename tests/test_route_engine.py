@@ -27,16 +27,19 @@ ZONE_A = (33.95, -118.34)
 ZONE_B = (33.96, -118.36)
 
 
-def _transit_result():
+def _transit_result(lead_s=650, trail_s=650):
+    # Default lead/trail both clear the 10-min access/egress-swap threshold
+    # (MICRO_ACCESS_MIN_WALK_S = 600) so the default scenario still exercises
+    # the transit+micro compositional variants.
     return {
         "mode": "transit",
         "distance_m": 8000,
-        "duration_s": 1800,
+        "duration_s": 900 + lead_s + trail_s,
         "polyline": "T",
         "steps": [
-            {"mode": "walking", "distance_m": 600, "duration_s": 480, "polyline": "w1"},
+            {"mode": "walking", "distance_m": 600, "duration_s": lead_s, "polyline": "w1"},
             {"mode": "transit", "distance_m": 6900, "duration_s": 900, "polyline": "t1"},
-            {"mode": "walking", "distance_m": 500, "duration_s": 420, "polyline": "w2"},
+            {"mode": "walking", "distance_m": 500, "duration_s": trail_s, "polyline": "w2"},
         ],
     }
 
@@ -166,6 +169,52 @@ def test_micromobility_access_egress_still_gated_on_availability(monkeypatch):
     for opt in res["options"]:
         if "transit" in opt["modes"] and len(opt["modes"]) > 1:
             assert "bike" not in opt["modes"] and "scooter" not in opt["modes"]
+
+
+def test_short_walk_does_not_get_a_micro_swap_variant(monkeypatch):
+    # A walk under 10 min is barely different from riding it — swapping it
+    # for a scooter/bike would just be a near-duplicate of plain transit, so
+    # no access/egress variant should be offered for it.
+    directions = dict(DEFAULT_DIRECTIONS)
+    directions["transit"] = _transit_result(lead_s=300, trail_s=300)  # 5 min each
+    patch_engine(monkeypatch, directions=directions)
+    res = route_engine.optimize(ORIGIN, DEST)
+    for opt in res["options"]:
+        if "transit" in opt["modes"]:
+            assert opt["modes"] == ["transit"], f"unexpected micro-swap variant: {opt['id']}"
+
+
+def test_long_walk_still_gets_a_micro_swap_variant(monkeypatch):
+    # Mirror case: only the trailing walk clears the 10-min bar, so only an
+    # egress (not access) variant should appear.
+    directions = dict(DEFAULT_DIRECTIONS)
+    directions["transit"] = _transit_result(lead_s=300, trail_s=900)  # 5 min / 15 min
+    patch_engine(monkeypatch, directions=directions)
+    res = route_engine.optimize(ORIGIN, DEST)
+    egress = [o for o in res["options"] if o["id"].endswith("-egress") and "-access" not in o["id"]]
+    access = [o for o in res["options"] if "-access" in o["id"]]
+    assert egress, "expected an egress swap-in variant for the 15-min trailing walk"
+    assert not access, "5-min leading walk should not get an access swap-in variant"
+
+
+def test_micro_swap_relabels_steps_to_the_vehicle_mode(monkeypatch):
+    # The swapped-in portion must render as the vehicle (color/label), not as
+    # a walk — each step's mode is relabeled and its duration scaled to the
+    # vehicle's pace rather than staying at walking speed.
+    directions = dict(DEFAULT_DIRECTIONS)
+    directions["transit"] = _transit_result(lead_s=650, trail_s=300)
+    patch_engine(monkeypatch, directions=directions)
+    res = route_engine.optimize(ORIGIN, DEST)
+    access_opts = [o for o in res["options"] if o["id"] == "transit+bike-access"]
+    assert access_opts, "expected a transit+bike-access option"
+    micro_leg = access_opts[0]["legs"][0]
+    assert micro_leg["mode"] == "bike"
+    assert micro_leg["steps"], "expected the walking sub-step to carry over"
+    for step in micro_leg["steps"]:
+        assert step["mode"] == "bike"  # not "walking"
+    # Bike is faster than walking, so the relabeled step duration must shrink.
+    original_step_s = _transit_result(lead_s=650, trail_s=300)["steps"][0]["duration_s"]
+    assert micro_leg["steps"][0]["duration_s"] < original_step_s
 
 
 # ── Metro Micro zone gating (FR-MM3) ──────────────────────────────────────────
