@@ -250,15 +250,15 @@ function StepRow({ step }: { step: RenderStep }) {
     const label = step.transit_line_short ?? step.transit_line ?? '';
     return (
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 8 }}>
-        <div style={{ background: color, color: '#fff', borderRadius: 10, padding: '2px 7px', fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap', flexShrink: 0, marginTop: 1 }}>
+        <div style={{ background: color, color: '#fff', borderRadius: 10, padding: '2px 7px', fontSize: 11, fontFamily: 'Barlow_700Bold', fontWeight: 700, whiteSpace: 'nowrap', flexShrink: 0, marginTop: 1 }}>
           {label || '●'}
         </div>
         <div>
-          <div style={{ fontSize: 12, fontWeight: 600, color: '#1F2937', lineHeight: '1.4' }}>
+          <div style={{ fontSize: 12, fontFamily: 'Barlow_600SemiBold', fontWeight: 600, color: '#1F2937', lineHeight: '1.4' }}>
             {step.transit_line}{step.headsign ? ` → ${step.headsign}` : ''}
           </div>
           {(step.departure_stop || step.arrival_stop) && (
-            <div style={{ fontSize: 11, color: '#6B7280', marginTop: 1 }}>
+            <div style={{ fontSize: 11, fontFamily: 'Barlow_400Regular', color: '#6B7280', marginTop: 1 }}>
               {step.departure_stop ? `Board: ${step.departure_stop}` : ''}
               {step.departure_stop && step.arrival_stop ? ' · ' : ''}
               {step.arrival_stop ? `Exit: ${step.arrival_stop}` : ''}
@@ -274,8 +274,8 @@ function StepRow({ step }: { step: RenderStep }) {
     <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 8 }}>
       <div style={{ width: 18, height: 18, borderRadius: '50%', background: color, flexShrink: 0, marginTop: 2 }} />
       <div>
-        <div style={{ fontSize: 12, color: '#374151', lineHeight: '1.4' }}>{label}</div>
-        <div style={{ fontSize: 11, color: '#9CA3AF' }}>
+        <div style={{ fontSize: 12, fontFamily: 'Barlow_500Medium', color: '#374151', lineHeight: '1.4' }}>{label}</div>
+        <div style={{ fontSize: 11, fontFamily: 'Barlow_400Regular', color: '#9CA3AF' }}>
           {[step.distance_m > 0 ? formatDistance(step.distance_m) : '', step.duration_s > 0 ? formatDuration(step.duration_s) : ''].filter(Boolean).join(' · ')}
         </div>
       </div>
@@ -870,17 +870,20 @@ export default function UnifiedPlannerScreen() {
 
 // ── Legend inline styles ───────────────────────────────────────────────────────
 
+// Bottom-right (not bottom-left) so the wider itinerary panel on the left
+// never grows tall enough to cover it. Offset above Google's own bottom-right
+// "camera controls" widget so the two don't overlap.
 const LEGEND_STYLE: React.CSSProperties = {
-  position: 'absolute', bottom: 16, left: 12,
+  position: 'absolute', bottom: 90, right: 12,
   background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(4px)',
   borderRadius: 10, padding: '10px 12px', boxShadow: '0 2px 10px rgba(0,0,0,0.15)',
   display: 'flex', flexDirection: 'column', gap: 7, zIndex: 10,
 };
 const LEGEND_ROW: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8 };
-const LEGEND_LABEL: React.CSSProperties = { fontFamily: 'system-ui, sans-serif', fontSize: 12, color: '#374151', fontWeight: '500' };
+const LEGEND_LABEL: React.CSSProperties = { fontFamily: 'Barlow_500Medium', fontSize: 12, color: '#374151', fontWeight: '500' };
 
 const PANEL_STYLE: React.CSSProperties = {
-  position: 'absolute', top: 12, left: 12, width: 380,
+  position: 'absolute', top: 12, left: 12, width: 460,
   maxHeight: 'calc(100% - 24px)', overflowY: 'auto',
   background: 'rgba(255,255,255,0.97)', backdropFilter: 'blur(6px)',
   borderRadius: 14, padding: 16, boxShadow: '0 4px 20px rgba(0,0,0,0.18)', zIndex: 10,

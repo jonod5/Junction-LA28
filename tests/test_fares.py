@@ -23,6 +23,31 @@ def test_micromobility_falls_back_when_no_plan():
     assert fares.micromobility_cost(10, "scooter", None) == round(1.00 + 3.9, 2)
 
 
+def test_micromobility_skips_subscription_plans_with_no_per_minute_rate():
+    # Regression: real GBFS feeds (e.g. Metro Bike Share) list membership
+    # passes ahead of the actual single-ride plan, with no reliable field
+    # order. A $17 monthly pass at index 0 must never get priced as if it
+    # were a single ride — none of these plans has per_min_pricing, so the
+    # engine must fall back to the documented per-type rate, not plans[0].
+    plans = [
+        {"plan_id": "monthly", "price": 17.0, "per_min_pricing": None},
+        {"plan_id": "annual", "price": 150.0, "per_min_pricing": None},
+        {"plan_id": "single-ride", "price": 1.75, "per_min_pricing": None},
+    ]
+    cost = fares.micromobility_cost(20, "bike", plans)
+    assert cost == fares.BIKE_UNLOCK_USD  # fallback, not $17 or $150
+
+
+def test_micromobility_finds_metered_plan_past_subscriptions():
+    # A subscription plan precedes the real per-minute plan — the metered
+    # one must still be found and used, not skipped just for not being first.
+    plans = [
+        {"plan_id": "monthly", "price": 17.0, "per_min_pricing": None},
+        {"plan_id": "pay-per-ride", "price": 0.50, "per_min_pricing": [{"start": 0, "rate": 0.30, "interval": 1}]},
+    ]
+    assert fares.micromobility_cost(10, "scooter", plans) == 3.50
+
+
 def test_micromobility_bike_included_minutes():
     # 20 min bike within the 30-min included window → just the unlock.
     assert fares.micromobility_cost(20, "bike", None) == fares.BIKE_UNLOCK_USD

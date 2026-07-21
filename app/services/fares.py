@@ -62,30 +62,34 @@ def metro_fare(num_taps: int) -> float:
 
 def _plan_rates(pricing_plans: list[dict] | None) -> tuple[float, float] | None:
     """
-    Pull (unlock_usd, per_min_usd) from GBFS system_pricing_plans if usable.
+    Pull (unlock_usd, per_min_usd) from a genuinely per-minute-metered GBFS
+    plan, if the provider publishes one.
 
-    GBFS `price` is the unlock/base; `per_min_pricing` is a list of tiers with a
-    `rate` per `interval` minutes.  We take the first tier as the headline rate.
-    Returns None if the plan can't be interpreted, so the caller falls back.
+    GBFS `system_pricing_plans` commonly lists membership passes (monthly,
+    annual, "24-hour access") ahead of the actual per-ride plan, in whatever
+    order the operator happens to publish them — Metro Bike Share's feed, for
+    example, lists a $17 monthly pass at index 0.  Blindly taking plans[0]
+    would price a single ride at a month's subscription fee.  The only
+    unambiguous signal that a plan prices ONE ride is a populated
+    per_min_pricing tier, so we scan for the first plan that has one and
+    ignore everything else.  Returns None when no such plan exists, so the
+    caller falls back to our documented per-type rate — which is also more
+    accurate for flat block-rate plans (e.g. Metro Bike Share's actual
+    "$1.75 per 30 minutes") that aren't a per-minute plan at all.
     """
-    if not pricing_plans:
-        return None
-    plan = pricing_plans[0]
-    try:
-        unlock = float(plan.get("price") or 0.0)
-    except (TypeError, ValueError):
-        return None
-    per_min = 0.0
-    tiers = plan.get("per_min_pricing") or []
-    if tiers:
+    for plan in pricing_plans or []:
+        tiers = plan.get("per_min_pricing") or []
+        if not tiers:
+            continue
         tier = tiers[0]
         try:
+            unlock = float(plan.get("price") or 0.0)
             rate = float(tier.get("rate") or 0.0)
             interval = float(tier.get("interval") or 1.0) or 1.0
-            per_min = rate / interval
         except (TypeError, ValueError):
-            per_min = 0.0
-    return unlock, per_min
+            continue
+        return unlock, rate / interval
+    return None
 
 
 def micromobility_cost(

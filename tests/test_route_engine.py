@@ -3,7 +3,10 @@ Route engine — the properties that make it research-grade:
 
   • deterministic: identical inputs → identical ranking (FR-R2)
   • excluded modes never surface, let alone rank top (FR-R3)
-  • feasibility pruning (walk > 2 km, micro > 5 km, GBFS availability)
+  • walk-only is always offered (no distance ceiling); bike/scooter-only are
+    always offered together (same path/time, cost-only difference) subject
+    to a distance cap, independent of live GBFS availability; GBFS
+    availability still gates the transit access/egress swap-in variants
   • Metro Micro offered only inside its two venue zones (FR-MM3)
   • strictly-dominated options dropped
 
@@ -121,27 +124,48 @@ def test_walk_only_preference_filters_everything_else(monkeypatch):
 
 # ── Feasibility pruning ───────────────────────────────────────────────────────
 
-def test_long_walk_is_not_offered(monkeypatch):
+def test_long_walk_is_still_offered(monkeypatch):
+    # Walk-only has no distance ceiling — it's free, so nothing strictly
+    # dominates it, and it must stay visible rather than silently vanish.
     directions = dict(DEFAULT_DIRECTIONS)
-    directions["walking"] = {"mode": "walking", "distance_m": 3000, "duration_s": 2200, "polyline": "W", "steps": []}
+    directions["walking"] = {"mode": "walking", "distance_m": 6000, "duration_s": 4300, "polyline": "W", "steps": []}
     patch_engine(monkeypatch, directions=directions)
     res = route_engine.optimize(ORIGIN, DEST, preferences=["walk"])
-    assert res["options"] == []  # 3 km walk exceeds the 2 km ceiling
+    assert res["options"]
+    assert res["options"][0]["modes"] == ["walk"]
 
 
-def test_micromobility_gated_on_availability(monkeypatch):
-    # No vehicles available anywhere → no bike/scooter modes at all.
+def test_bike_and_scooter_always_offered_together(monkeypatch):
+    # Short-enough bicycling leg (within the 5 km cap); no live vehicles
+    # anywhere — direct bike/scooter no longer depend on GBFS availability.
+    directions = dict(DEFAULT_DIRECTIONS)
+    directions["bicycling"] = {"mode": "bicycling", "distance_m": 3000, "duration_s": 700, "polyline": "B", "steps": []}
+    patch_engine(monkeypatch, directions=directions, types=set())
+    res = route_engine.optimize(ORIGIN, DEST, preferences=["bike", "scooter"])
+    by_mode = {tuple(o["modes"]): o for o in res["options"]}
+    assert ("bike",) in by_mode
+    assert ("scooter",) in by_mode
+    # Same underlying route: identical path/time, cost-only difference.
+    assert by_mode[("bike",)]["total_minutes"] == by_mode[("scooter",)]["total_minutes"]
+    assert by_mode[("bike",)]["legs"][0]["polyline"] == by_mode[("scooter",)]["legs"][0]["polyline"]
+    assert by_mode[("bike",)]["total_cost_usd"] != by_mode[("scooter",)]["total_cost_usd"]
+
+
+def test_bike_scooter_beyond_cap_not_offered(monkeypatch):
+    patch_engine(monkeypatch)  # default bicycling distance (7 km) exceeds the 5 km cap
+    res = route_engine.optimize(ORIGIN, DEST, preferences=["bike", "scooter"])
+    assert res["options"] == []
+
+
+def test_micromobility_access_egress_still_gated_on_availability(monkeypatch):
+    # The transit-blended access/egress swap-in variants (a specific vehicle
+    # must be at the transfer point) still require live GBFS availability,
+    # unlike the direct bike/scooter-only candidates.
     patch_engine(monkeypatch, types=set())
     res = route_engine.optimize(ORIGIN, DEST)
     for opt in res["options"]:
-        assert "bike" not in opt["modes"] and "scooter" not in opt["modes"]
-
-
-def test_micromobility_appears_when_available(monkeypatch):
-    patch_engine(monkeypatch)
-    res = route_engine.optimize(ORIGIN, DEST)
-    all_modes = {m for o in res["options"] for m in o["modes"]}
-    assert all_modes & {"bike", "scooter"}
+        if "transit" in opt["modes"] and len(opt["modes"]) > 1:
+            assert "bike" not in opt["modes"] and "scooter" not in opt["modes"]
 
 
 # ── Metro Micro zone gating (FR-MM3) ──────────────────────────────────────────

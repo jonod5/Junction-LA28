@@ -13,13 +13,19 @@ Methodology (this docstring is the source for the journal/poster write-up):
    combinations like "scooter → rail → walk" or "bike end-to-end" emerge from
    the segment options rather than being enumerated by hand.
 
-2. FEASIBILITY PRUNING only — never taste.  Walk legs over ~2 km and
-   micromobility legs over ~5 km are dropped; micromobility is only proposed
-   where GBFS shows availability; Metro Micro only where both endpoints share
-   one of its two venue-relevant zones.  We then drop strictly-dominated
-   options (worse on BOTH time and cost than some other candidate) and cap the
-   set.  What a traveler *prefers* is expressed through preferences + scoring,
-   not by pre-filtering the menu.
+2. FEASIBILITY PRUNING only — never taste.  Walk-only is always offered
+   (it's free, so it is essentially never strictly dominated, and a traveler
+   should be able to see and judge a long walk rather than have it silently
+   vanish).  Direct bike-only and scooter-only both ride the same Google
+   bicycling route — identical path and time, cost-only difference — subject
+   to a ~5 km cap; live GBFS *availability* is not required for these direct
+   options, only for the transit access/egress swap-in variants (there a
+   specific vehicle genuinely needs to be at the transfer point).  Metro
+   Micro is offered only where both endpoints share one of its two
+   venue-relevant zones.  We then drop strictly-dominated options (worse on
+   BOTH time and cost than some other candidate) and cap the set.  What a
+   traveler *prefers* is expressed through preferences + scoring, not by
+   pre-filtering the menu.
 
    Park-and-ride is NOT currently offered as a candidate: modeling it
    correctly needs real park-and-ride lot locations and the car-free-zone
@@ -55,7 +61,6 @@ log = logging.getLogger(__name__)
 WEIGHTS = {"time": 1.0, "cost": 1.0, "transfer": 0.15}
 
 # ── Feasibility thresholds & speeds ───────────────────────────────────────────
-WALK_MAX_M = 2000          # a walk-only trip beyond this is not offered
 MICRO_MAX_M = 5000         # bike/scooter legs beyond this are not offered
 MICRO_ACCESS_MIN_M = 300   # only worth swapping a walk for micro past this
 MICRO_ACCESS_RADIUS_M = 300  # a rider will walk this far to reach a vehicle
@@ -124,7 +129,7 @@ def _leg(mode: str, distance_m, duration_s, polyline: str = "", steps: list | No
     }
 
 
-def _candidate(cid, primary_modes, minutes, cost, transfers, legs) -> dict:
+def _candidate(cid, primary_modes, minutes, cost, transfers, legs, compare_group=None) -> dict:
     return {
         "id": cid,
         "label": _label(primary_modes),
@@ -134,6 +139,12 @@ def _candidate(cid, primary_modes, minutes, cost, transfers, legs) -> dict:
         "cost_is_estimate": True,
         "num_transfers": transfers,
         "legs": legs,
+        # Candidates sharing a compare_group are never allowed to dominate
+        # each other (see _drop_dominated) — used for bike vs scooter, which
+        # ride the identical route and only differ on cost model; a traveler
+        # comparing them wants to see both, not have the cheaper one silently
+        # hide the other.
+        "compare_group": compare_group,
     }
 
 
@@ -237,32 +248,42 @@ def _build_transit_candidates(origin, dest, departure_time, o_micro, d_micro) ->
     return out
 
 
-def _build_direct_candidates(origin, dest, o_micro) -> list[dict]:
+def _build_direct_candidates(origin, dest, o_micro, d_micro) -> list[dict]:
     o = f"{origin[0]},{origin[1]}"
     d = f"{dest[0]},{dest[1]}"
     out: list[dict] = []
 
-    # Walk-only.
+    # Walk-only.  Always offered when a walking route exists — no distance
+    # cap.  Walking is free, so it can only be strictly dominated by another
+    # free, equal-or-faster option; in practice it always survives pruning
+    # and stays visible, letting the traveler judge for themselves whether a
+    # long walk is reasonable rather than having it silently disappear.
     walk = fetch_directions(o, d, "walking")
-    if walk and walk["distance_m"] <= WALK_MAX_M:
+    if walk:
         out.append(_candidate(
             "walk", ["walk"], walk["duration_s"] / 60.0, 0.0, 0,
             [_leg("walk", walk["distance_m"], walk["duration_s"], walk["polyline"], walk["steps"])],
         ))
 
-    # Bike / scooter end-to-end (one per available type, feasibility-gated).
+    # Bike and scooter end-to-end — always offered together (subject to the
+    # distance cap), both riding the SAME Google bicycling route, so they
+    # share identical path and time; only the cost model differs between
+    # them.  Live GBFS pricing is used when available at either endpoint,
+    # else the documented fallback per-type rates.  (Live GBFS *availability*
+    # still gates the transit access/egress swap-in variants below, where a
+    # vehicle genuinely needs to be at the transfer point — direct point-to-
+    # point cycling doesn't depend on a specific shared vehicle being nearby
+    # at query time.)
     bike = fetch_directions(o, d, "bicycling")
     if bike and bike["distance_m"] <= MICRO_MAX_M:
-        for vtype in sorted(o_micro["types"]):
-            if vtype == "ebike":
-                cost_type = "bike"
-            else:
-                cost_type = vtype
-            minutes = bike["duration_s"] / 60.0
-            cost = fares.micromobility_cost(minutes, cost_type, o_micro["pricing"])
+        pricing = o_micro["pricing"] or d_micro["pricing"]
+        minutes = bike["duration_s"] / 60.0
+        for vtype in ("bike", "scooter"):
+            cost = fares.micromobility_cost(minutes, vtype, pricing)
             out.append(_candidate(
                 f"{vtype}-only", [vtype], minutes, cost, 0,
                 [_leg(vtype, bike["distance_m"], bike["duration_s"], bike["polyline"], bike["steps"])],
+                compare_group="micro-direct",
             ))
 
     # Rideshare (driving proxy) — always feasible where a road route exists.
@@ -298,12 +319,20 @@ def _build_metro_micro_candidate(origin, dest) -> dict | None:
 # ── Ranking ───────────────────────────────────────────────────────────────────
 
 def _drop_dominated(cands: list[dict]) -> list[dict]:
-    """Remove options worse on BOTH time and cost than some other option."""
+    """
+    Remove options worse on BOTH time and cost than some other option.
+
+    Candidates sharing a non-None compare_group never dominate each other —
+    see _candidate() — so directly-comparable options (bike vs scooter) both
+    stay visible for the traveler to weigh, even if one is strictly cheaper.
+    """
     kept: list[dict] = []
     for a in cands:
         dominated = False
         for b in cands:
             if b is a:
+                continue
+            if a.get("compare_group") is not None and a.get("compare_group") == b.get("compare_group"):
                 continue
             if (b["total_minutes"] <= a["total_minutes"]
                     and b["total_cost_usd"] <= a["total_cost_usd"]
@@ -372,7 +401,7 @@ def optimize(
     # single mode shouldn't sink the whole request, so guard per group.
     for builder in (
         lambda: _build_transit_candidates(origin, destination, departure_time, o_micro, d_micro),
-        lambda: _build_direct_candidates(origin, destination, o_micro),
+        lambda: _build_direct_candidates(origin, destination, o_micro, d_micro),
     ):
         try:
             cands.extend(builder())
