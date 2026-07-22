@@ -106,7 +106,7 @@ export interface CurbDropoff {
   id: number;
   rideshare_zone_description: string | null;
   rideshare_zone_open_window: string | null;
-  taxi_accessible_zone: boolean | null;
+  taxi_accessible_zone: string | null;
   private_vehicle_dropoff: string | null;
   no_stop_zones: string | null;
   curbside_restrictions: string | null;

@@ -4,6 +4,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { colors, radius, spacing } from '@/constants/theme';
 import type { CurbDropoff, ParkingOption, TransitAccess, VenueDetail } from '@/lib/api';
+import { factRow, type FactRow, parseBusLines, parseLotNames, splitFacts } from '@/lib/venueText';
 
 interface Props {
   /** Null while the fetch is still in flight — loading/error states handle it. */
@@ -41,11 +42,13 @@ export function VenueDetailPanel({ venue, loading, error, liveCount, liveLoading
       : arrivalMax != null ? `up to ${arrivalMax} hrs before`
       : null;
 
-  const moreDetailParts = venue ? [
-    venue.congestion_tdm?.general_tdm_notes,
-    venue.congestion_tdm?.arrival_notes,
-    ...venue.transit_accesses.map((t) => t.transit_notes).filter(Boolean),
-  ].filter((t): t is string => !!t) : [];
+  const moreDetailRows: FactRow[] = venue ? [
+    ...splitFacts(venue.congestion_tdm?.general_tdm_notes, 'TDM note'),
+    ...splitFacts(venue.congestion_tdm?.arrival_notes, 'Arrival note'),
+    ...splitFacts(venue.congestion_tdm?.high_congestion_entry_roads, 'Busy entry roads'),
+    ...splitFacts(venue.congestion_tdm?.known_congestion_exit_roads, 'Busy exit roads'),
+    ...venue.transit_accesses.flatMap((t) => splitFacts(t.transit_notes)),
+  ] : [];
 
   return (
     <div style={PANEL_CSS}>
@@ -62,7 +65,7 @@ export function VenueDetailPanel({ venue, loading, error, liveCount, liveLoading
       ) : error ? (
         <Text style={styles.errorText}>{error}</Text>
       ) : (
-        <ScrollView style={styles.scroll} contentContainerStyle={{ gap: spacing.sm }} showsVerticalScrollIndicator={false}>
+        <ScrollView style={styles.scroll} contentContainerStyle={{ gap: spacing.md }} showsVerticalScrollIndicator={false}>
           {/* Live micromobility count — glanceable, top of the card. */}
           <View style={styles.liveRow}>
             <Feather name="zap" size={13} color={liveCount ? colors.success : colors.mutedFg} />
@@ -95,7 +98,7 @@ export function VenueDetailPanel({ venue, loading, error, liveCount, liveLoading
 
           {/* Transit access — scannable chip rows, not paragraphs. */}
           {venue.transit_accesses.length > 0 && (
-            <View style={{ gap: 6 }}>
+            <View style={{ gap: spacing.sm }}>
               <Text style={styles.sectionLabel}>TRANSIT</Text>
               {venue.transit_accesses.map((t) => <TransitRow key={t.id} transit={t} />)}
             </View>
@@ -119,8 +122,8 @@ export function VenueDetailPanel({ venue, loading, error, liveCount, liveLoading
             </View>
           )}
 
-          {/* Remaining prose — progressive disclosure. */}
-          {moreDetailParts.length > 0 && (
+          {/* Remaining detail — progressive disclosure, still a fact list. */}
+          {moreDetailRows.length > 0 && (
             <View style={styles.collapseBlock}>
               <Pressable onPress={() => setMoreOpen((v) => !v)} style={styles.collapseHeader} accessibilityRole="button">
                 <Feather name={moreOpen ? 'chevron-down' : 'chevron-right'} size={14} color={colors.muted} />
@@ -128,7 +131,7 @@ export function VenueDetailPanel({ venue, loading, error, liveCount, liveLoading
               </Pressable>
               {moreOpen && (
                 <View style={{ gap: 6, paddingLeft: spacing.md, paddingTop: 4 }}>
-                  {moreDetailParts.map((t, i) => <Text key={i} style={styles.proseText}>{t}</Text>)}
+                  <FactList rows={moreDetailRows} />
                 </View>
               )}
             </View>
@@ -152,11 +155,37 @@ const PANEL_CSS: React.CSSProperties = {
   display: 'flex', flexDirection: 'column', gap: 6,
 };
 
+/** Bold label + terse fragment, one fact per line — the panel-wide row style. */
+function FactRowView({ row }: { row: FactRow }) {
+  return (
+    <Text style={styles.factRowText}>
+      <Text style={styles.factLabel}>{row.label}</Text>
+      <Text style={styles.factSep}>{'  ·  '}</Text>
+      {row.value}
+    </Text>
+  );
+}
+
+function FactList({ rows }: { rows: FactRow[] }) {
+  if (rows.length === 0) return null;
+  return (
+    <View style={styles.factList}>
+      {rows.map((row, i) => <FactRowView key={i} row={row} />)}
+    </View>
+  );
+}
+
 function TransitRow({ transit }: { transit: TransitAccess }) {
   // nearest_metro_station often just repeats stop_name for rail entries —
   // only show it when it's actually a different (transfer) station.
   const metroDiffers =
     transit.nearest_metro_station && transit.nearest_metro_station !== transit.stop_name;
+  const transferRow = metroDiffers ? factRow('Transfer', transit.nearest_metro_station) : null;
+  const busPills = parseBusLines(transit.bus_lines_serving);
+  // Not every venue's bus_lines_serving follows the "Line X (to Dest)"
+  // pattern the pills need — fall back to a plain fact row so nothing
+  // silently disappears.
+  const busFallback = busPills.length === 0 ? splitFacts(transit.bus_lines_serving, 'Bus lines') : [];
   return (
     <View style={styles.transitBlock}>
       <View style={styles.chipRow}>
@@ -170,44 +199,76 @@ function TransitRow({ transit }: { transit: TransitAccess }) {
           <Text style={styles.transitWalk}>{transit.walk_time_min} min walk</Text>
         )}
       </View>
-      {metroDiffers && <Text style={styles.transitSub}>Transfer: {transit.nearest_metro_station}</Text>}
-      {transit.bus_lines_serving && <Text style={styles.transitSub}>Bus: {transit.bus_lines_serving}</Text>}
+      {transferRow && <FactRowView row={transferRow} />}
+      {busPills.length > 0 && (
+        <View style={styles.pillRow}>
+          {busPills.map((p, i) => (
+            <View key={i} style={styles.pill}>
+              <Text style={styles.pillText}>{p.code} → {p.detail}</Text>
+            </View>
+          ))}
+        </View>
+      )}
+      <FactList rows={busFallback} />
     </View>
   );
 }
 
 function CurbRow({ curb }: { curb: CurbDropoff }) {
-  const lines: string[] = [];
-  if (curb.rideshare_zone_description) {
-    lines.push(`Rideshare: ${curb.rideshare_zone_description}${curb.rideshare_zone_open_window ? ` (${curb.rideshare_zone_open_window})` : ''}`);
-  }
-  if (curb.taxi_accessible_zone) lines.push(`Accessible zone: ${curb.taxi_accessible_zone}`);
-  if (curb.private_vehicle_dropoff) lines.push(`Drop-off: ${curb.private_vehicle_dropoff}`);
-  if (lines.length === 0) return null;
+  const rows: FactRow[] = [
+    ...splitFacts(curb.rideshare_zone_description, 'Rideshare pickup'),
+    ...splitFacts(curb.rideshare_zone_open_window, 'Post-event delay'),
+    ...splitFacts(curb.taxi_accessible_zone, 'Accessible zone'),
+    ...splitFacts(curb.private_vehicle_dropoff, 'Drop-off'),
+  ];
+  if (rows.length === 0) return null;
   return (
-    <View style={{ gap: 4 }}>
+    <View style={{ gap: spacing.xs }}>
       <Text style={styles.sectionLabel}>DROP-OFF &amp; ACCESSIBILITY</Text>
-      {lines.map((line, i) => (
-        <View key={i} style={styles.plainRow}>
-          <Feather name="map-pin" size={12} color={colors.muted} style={{ marginTop: 2 }} />
-          <Text style={styles.plainRowText}>{line}</Text>
-        </View>
-      ))}
+      <FactList rows={rows} />
     </View>
   );
 }
 
+/** Short headline for a multi-lot group: the text before a group label's
+ * colon ("Exposition Park: Blue Structure, ...") or a plain lot count. */
+function lotGroupLabel(rawLotName: string | null, count: number): string {
+  if (rawLotName) {
+    const colonIdx = rawLotName.indexOf(':');
+    if (colonIdx > -1 && colonIdx < 40) return rawLotName.slice(0, colonIdx).trim();
+  }
+  return `${count} lots`;
+}
+
 function ParkingRow({ parking }: { parking: ParkingOption }) {
+  const [lotsOpen, setLotsOpen] = useState(false);
   const hasPrice = parking.price_min != null || parking.price_max != null;
+  const priceText = hasPrice
+    ? parking.price_min != null && parking.price_max != null
+      ? `$${parking.price_min}–$${parking.price_max}`
+      : parking.price_min != null
+        ? `$${parking.price_min}+`
+        : `up to $${parking.price_max}`
+    : null;
+  const lots = parseLotNames(parking.lot_name);
+  const isGroup = lots.length > 1;
+
   return (
-    <View style={styles.parkingRow}>
-      <Text style={styles.parkingName}>{parking.lot_name ?? 'Lot'}</Text>
-      {hasPrice && (
-        <Text style={styles.parkingPrice}>
-          {parking.price_min != null && parking.price_max != null
-            ? `$${parking.price_min}–$${parking.price_max}`
-            : parking.price_min != null ? `$${parking.price_min}+` : `up to $${parking.price_max}`}
-        </Text>
+    <View style={styles.parkingBlock}>
+      <View style={styles.parkingRow}>
+        <Text style={styles.parkingName}>{isGroup ? lotGroupLabel(parking.lot_name, lots.length) : (parking.lot_name ?? 'Lot')}</Text>
+        {priceText && <Text style={styles.parkingPrice}>{priceText}</Text>}
+      </View>
+      {isGroup && (
+        <Pressable onPress={() => setLotsOpen((v) => !v)} style={styles.lotsToggle} accessibilityRole="button">
+          <Feather name={lotsOpen ? 'chevron-down' : 'chevron-right'} size={12} color={colors.muted} />
+          <Text style={styles.lotsToggleText}>{lots.length} lots</Text>
+        </Pressable>
+      )}
+      {isGroup && lotsOpen && (
+        <View style={{ paddingLeft: spacing.md, gap: 2 }}>
+          {lots.map((lot, i) => <Text key={i} style={styles.lotItem}>{lot}</Text>)}
+        </View>
       )}
     </View>
   );
@@ -231,20 +292,27 @@ const styles = StyleSheet.create({
   chipRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
   chip: { backgroundColor: colors.secondary, borderRadius: radius.sm, paddingHorizontal: 6, paddingVertical: 2 },
   chipText: { fontFamily: 'Barlow_600SemiBold', fontSize: 11, color: colors.onPrimary },
-  chipRowText: { fontFamily: 'Barlow_400Regular', fontSize: 12, color: colors.muted, flexShrink: 1 },
-  transitBlock: { gap: 3 },
+  transitBlock: { gap: 6, paddingBottom: 2 },
   transitStop: { fontFamily: 'Barlow_600SemiBold', fontSize: 12, color: colors.foreground },
   transitWalk: { fontFamily: 'Barlow_400Regular', fontSize: 12, color: colors.muted },
-  transitSub: { fontFamily: 'Barlow_400Regular', fontSize: 11.5, color: colors.muted, lineHeight: 16, paddingLeft: 2 },
-  plainRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 6 },
-  plainRowText: { fontFamily: 'Barlow_400Regular', fontSize: 12, color: colors.foreground, flex: 1, lineHeight: 17 },
+  // Bold-label fact rows — the panel-wide "one fact per line" format.
+  factList: { gap: 7 },
+  factRowText: { fontFamily: 'Barlow_400Regular', fontSize: 12.5, color: colors.foreground, lineHeight: 18 },
+  factLabel: { fontFamily: 'Barlow_700Bold', fontSize: 12.5, color: colors.foreground },
+  factSep: { color: colors.muted },
+  pillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginTop: 1 },
+  pill: { backgroundColor: colors.mutedBg, borderRadius: radius.sm, paddingHorizontal: 6, paddingVertical: 3 },
+  pillText: { fontFamily: 'Barlow_500Medium', fontSize: 11, color: colors.foreground },
   collapseBlock: { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.xs },
   collapseHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 4 },
   collapseTitle: { fontFamily: 'Barlow_600SemiBold', fontSize: 12, color: colors.muted, flex: 1 },
+  parkingBlock: { gap: 4, paddingVertical: 2 },
   parkingRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: spacing.sm },
   parkingName: { fontFamily: 'Barlow_500Medium', fontSize: 12, color: colors.foreground, flex: 1, lineHeight: 16 },
   parkingPrice: { fontFamily: 'BarlowCondensed_700Bold', fontSize: 14, color: colors.accent },
-  proseText: { fontFamily: 'Barlow_400Regular', fontSize: 12, color: colors.muted, lineHeight: 17 },
+  lotsToggle: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  lotsToggleText: { fontFamily: 'Barlow_500Medium', fontSize: 11, color: colors.muted },
+  lotItem: { fontFamily: 'Barlow_400Regular', fontSize: 11.5, color: colors.muted, lineHeight: 16 },
   actionBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
     backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: spacing.sm, minHeight: 40, marginTop: spacing.xs,
