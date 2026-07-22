@@ -24,6 +24,7 @@ import { DeepLinkButtons } from '@/components/DeepLinkButtons';
 import { ModePreferencesChecklist } from '@/components/ModePreferencesChecklist';
 import { PolicyBanner } from '@/components/PolicyBanner';
 import { StopSearch, type SearchItem } from '@/components/StopSearch';
+import { VenueDetailPanel } from '@/components/VenueDetailPanel';
 import { AIRPORTS } from '@/constants/airports';
 import { colors, radius, shadow, spacing } from '@/constants/theme';
 import {
@@ -39,6 +40,8 @@ import {
   RouteMode,
   RouteOption,
   type MicromobilityItem,
+  type MicromobilityResult,
+  type VenueDetail,
 } from '@/lib/api';
 import { linksForModes, type Place } from '@/lib/deeplinks';
 import { decodePolyline, formatDistance, formatDuration } from '@/lib/polyline';
@@ -105,14 +108,16 @@ function makeBadgeIcon(text: string, bg: string): google.maps.Icon {
   };
 }
 
-function makeTransitIcon(type: TransitLayer): google.maps.Icon {
+function makeTransitIcon(type: TransitLayer, emphasized = false): google.maps.Icon {
   const { label, fill } = TRANSIT_LAYER_CONFIG[type];
-  const size = 22;
+  const size = emphasized ? 30 : 22;
   const r = size / 2;
+  const ring = emphasized ? `<circle cx="${r}" cy="${r}" r="${r - 0.5}" fill="none" stroke="${fill}" stroke-width="1.5" opacity="0.4"/>` : '';
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}">
-    <circle cx="${r}" cy="${r}" r="${r - 1.5}" fill="${fill}" stroke="white" stroke-width="2"/>
-    <text x="${r}" y="${r + 4}" text-anchor="middle" fill="white"
-      font-size="10" font-weight="bold" font-family="system-ui,sans-serif">${label}</text>
+    ${ring}
+    <circle cx="${r}" cy="${r}" r="${r - (emphasized ? 4 : 1.5)}" fill="${fill}" stroke="white" stroke-width="2"/>
+    <text x="${r}" y="${r + (emphasized ? 5 : 4)}" text-anchor="middle" fill="white"
+      font-size="${emphasized ? 12 : 10}" font-weight="bold" font-family="system-ui,sans-serif">${label}</text>
   </svg>`;
   return {
     url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
@@ -304,6 +309,7 @@ export default function UnifiedPlannerScreen() {
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const transitMarkersRef = useRef<google.maps.Marker[]>([]);
   const liveMarkersRef = useRef<google.maps.Marker[]>([]);
+  const venueLiveMarkersRef = useRef<google.maps.Marker[]>([]);
 
   const [mapError, setMapError] = useState<string | null>(null);
   const [mapReady, setMapReady] = useState(false);
@@ -323,6 +329,18 @@ export default function UnifiedPlannerScreen() {
   const [addingStop, setAddingStop] = useState(false);
   const [prefsOpen, setPrefsOpen] = useState(false);
   const [expandedLeg, setExpandedLeg] = useState<string | null>(null);
+
+  // ── Venue detail panel (FR-I1/I2) — right-side, docked over the map ───────
+  const [openVenue, setOpenVenue] = useState<{ id: number; lat: number; lng: number } | null>(null);
+  const [venueDetail, setVenueDetail] = useState<VenueDetail | null>(null);
+  const [venueDetailLoading, setVenueDetailLoading] = useState(false);
+  const [venueDetailError, setVenueDetailError] = useState<string | null>(null);
+  const [venueLive, setVenueLive] = useState<MicromobilityResult | null>(null);
+  const [venueLiveLoading, setVenueLiveLoading] = useState(false);
+  const [venueLiveError, setVenueLiveError] = useState<string | null>(null);
+
+  const openVenuePanel = (id: number, lat: number, lng: number) => setOpenVenue({ id, lat, lng });
+  const closeVenuePanel = () => setOpenVenue(null);
 
   // Auto-create a session trip on first load — the unified flow doesn't ask
   // the traveler to name a trip; matches the PRD's first-open flow exactly
@@ -451,12 +469,15 @@ export default function UnifiedPlannerScreen() {
         title: s.name,
       });
       marker.addListener('click', () => {
-        const detailsLink = s.venue_id != null
-          ? `<div style="margin-top:4px"><a href="/venue/${s.venue_id}" style="font-size:11px;color:${colors.primary};font-weight:600">View venue details →</a></div>`
-          : '';
+        // Venues open the right-side detail panel directly (FR-I1/I2);
+        // custom (non-venue) stops just get a name popup, same as before.
+        if (s.venue_id != null) {
+          openVenuePanel(s.venue_id, s.lat, s.lng);
+          return;
+        }
         clickWindowRef.current?.setContent(
           `<div style="font-family:system-ui,sans-serif;padding:3px 2px">
-            <b style="font-size:13px">${i + 1}. ${s.name}</b>${detailsLink}
+            <b style="font-size:13px">${i + 1}. ${s.name}</b>
           </div>`,
         );
         clickWindowRef.current?.open(map, marker);
@@ -546,14 +567,26 @@ export default function UnifiedPlannerScreen() {
   }, [mapReady, addedNames.join(',')]);
 
   // ── Static transit overlay (hand-collected zones — always-on fallback) ───
+  // While a venue panel is open, its related points are shown regardless of
+  // the layer toggles (enlarged + ringed) and everything else dims, so the
+  // venue's access options are visually obvious (FR-I1/I2, 5c).
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
     transitMarkersRef.current.forEach((m) => m.setMap(null));
     transitMarkersRef.current = [];
     VENUE_TRANSIT.forEach((point) => {
-      if (!layerVisibility[point.type]) return;
-      const marker = new window.google.maps.Marker({ position: { lat: point.lat, lng: point.lng }, map, icon: makeTransitIcon(point.type), title: point.name, zIndex: 12, optimized: false });
+      const isRelated = openVenue != null && point.venueIds.includes(openVenue.id);
+      if (!layerVisibility[point.type] && !isRelated) return;
+      const marker = new window.google.maps.Marker({
+        position: { lat: point.lat, lng: point.lng },
+        map,
+        icon: makeTransitIcon(point.type, isRelated),
+        opacity: openVenue != null && !isRelated ? 0.3 : 1,
+        title: point.name,
+        zIndex: isRelated ? 16 : 12,
+        optimized: false,
+      });
       marker.addListener('click', () => {
         clickWindowRef.current?.setContent(transitInfoHtml(point));
         clickWindowRef.current?.open(map, marker);
@@ -561,7 +594,7 @@ export default function UnifiedPlannerScreen() {
       transitMarkersRef.current.push(marker);
     });
     return () => { transitMarkersRef.current.forEach((m) => m.setMap(null)); transitMarkersRef.current = []; };
-  }, [mapReady, layerVisibility]);
+  }, [mapReady, layerVisibility, openVenue]);
 
   // ── Live GBFS overlay ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -605,6 +638,90 @@ export default function UnifiedPlannerScreen() {
     });
     return () => { liveMarkersRef.current.forEach((m) => m.setMap(null)); liveMarkersRef.current = []; };
   }, [mapReady, liveEnabled, liveItems]);
+
+  // Venue-scoped live GBFS markers — shown whenever the venue panel is open,
+  // independent of the general "LIVE" legend toggle, so the panel's live
+  // count always matches what's highlighted on the map (FR-I1/I2, 5c).
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    venueLiveMarkersRef.current.forEach((m) => m.setMap(null));
+    venueLiveMarkersRef.current = [];
+    if (!openVenue || !venueLive) return;
+    venueLive.items.forEach((item) => {
+      const marker = new window.google.maps.Marker({ position: { lat: item.lat, lng: item.lng }, map, icon: makeLiveIcon(item), title: item.name ?? item.provider, zIndex: 17, optimized: false });
+      marker.addListener('click', () => { clickWindowRef.current?.setContent(liveInfoHtml(item)); clickWindowRef.current?.open(map, marker); });
+      venueLiveMarkersRef.current.push(marker);
+    });
+    return () => { venueLiveMarkersRef.current.forEach((m) => m.setMap(null)); venueLiveMarkersRef.current = []; };
+  }, [mapReady, openVenue, venueLive]);
+
+  // ── Venue detail panel: fetch venue + venue-scoped live GBFS (FR-I1/I2) ──
+  // Independent of the general "LIVE" legend toggle — the panel's live count
+  // must show regardless of whether the map-wide layer is on.
+  useEffect(() => {
+    if (!openVenue) {
+      setVenueDetail(null);
+      setVenueDetailError(null);
+      setVenueLive(null);
+      setVenueLiveError(null);
+      return;
+    }
+    let cancelled = false;
+    setVenueDetailLoading(true);
+    setVenueDetailError(null);
+    api.getVenue(openVenue.id)
+      .then((v) => { if (!cancelled) setVenueDetail(v); })
+      .catch((e: unknown) => { if (!cancelled) setVenueDetailError(e instanceof Error ? e.message : 'Could not load venue'); })
+      .finally(() => { if (!cancelled) setVenueDetailLoading(false); });
+
+    setVenueLiveLoading(true);
+    setVenueLiveError(null);
+    api.getMicromobility(openVenue.lat, openVenue.lng, 600)
+      .then((r) => { if (!cancelled) setVenueLive(r); })
+      .catch(() => { if (!cancelled) setVenueLiveError('Live feed unavailable'); })
+      .finally(() => { if (!cancelled) setVenueLiveLoading(false); });
+
+    return () => { cancelled = true; };
+  }, [openVenue]);
+
+  // Map reacts while the panel is open: fit to the venue + its nearby transit
+  // points, biased away from the right panel; return to the itinerary view
+  // (fit-to-stops) when the panel closes.
+  const fitBoundsToStops = () => {
+    const map = mapRef.current;
+    if (!map || !window.google?.maps || stops.length === 0) return;
+    if (stops.length === 1) {
+      map.setCenter({ lat: stops[0].lat, lng: stops[0].lng });
+      map.setZoom(14);
+      return;
+    }
+    const bounds = new window.google.maps.LatLngBounds();
+    stops.forEach((s) => bounds.extend({ lat: s.lat, lng: s.lng }));
+    map.fitBounds(bounds, 80);
+  };
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || !window.google?.maps) return;
+    if (!openVenue) {
+      fitBoundsToStops();
+      return;
+    }
+    const relatedPoints = VENUE_TRANSIT.filter((p) => p.venueIds.includes(openVenue.id));
+    if (relatedPoints.length === 0) {
+      map.setCenter({ lat: openVenue.lat, lng: openVenue.lng });
+      map.setZoom(15);
+      return;
+    }
+    const bounds = new window.google.maps.LatLngBounds();
+    bounds.extend({ lat: openVenue.lat, lng: openVenue.lng });
+    relatedPoints.forEach((p) => bounds.extend({ lat: p.lat, lng: p.lng }));
+    // Right padding clears the venue panel (340px wide + margin); left/top/
+    // bottom padding keeps the venue off the very edge.
+    map.fitBounds(bounds, { top: 80, right: 400, bottom: 80, left: 80 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openVenue, mapReady]);
 
   // ── Panel actions ─────────────────────────────────────────────────────────
   const moveStop = (index: number, dir: -1 | 1) => {
@@ -694,8 +811,16 @@ export default function UnifiedPlannerScreen() {
                   <View style={{ gap: 4, marginTop: spacing.xs }}>
                     {stops.map((s, i) => (
                       <View key={s.id} style={styles.miniStopRow}>
-                        <View style={styles.miniStopBadge}><Text style={styles.miniStopBadgeText}>{i + 1}</Text></View>
-                        <Text style={styles.miniStopName} numberOfLines={1}>{s.name}</Text>
+                        <Pressable
+                          onPress={() => s.venue_id != null && openVenuePanel(s.venue_id, s.lat, s.lng)}
+                          disabled={s.venue_id == null}
+                          style={styles.stopRowTapArea}
+                          accessibilityRole="button"
+                          accessibilityLabel={`View details for ${s.name}`}
+                        >
+                          <View style={styles.miniStopBadge}><Text style={styles.miniStopBadgeText}>{i + 1}</Text></View>
+                          <Text style={styles.miniStopName} numberOfLines={1}>{s.name}</Text>
+                        </Pressable>
                         <Pressable onPress={() => removeStop(s.id)} hitSlop={8} accessibilityLabel={`Remove ${s.name}`}>
                           <Feather name="x" size={14} color={colors.mutedFg} />
                         </Pressable>
@@ -759,8 +884,16 @@ export default function UnifiedPlannerScreen() {
               <View style={{ gap: 6 }}>
                 {stops.map((s, i) => (
                   <View key={s.id} style={styles.stopRow}>
-                    <View style={styles.miniStopBadge}><Text style={styles.miniStopBadgeText}>{i + 1}</Text></View>
-                    <Text style={styles.miniStopName} numberOfLines={1}>{s.name}</Text>
+                    <Pressable
+                      onPress={() => s.venue_id != null && openVenuePanel(s.venue_id, s.lat, s.lng)}
+                      disabled={s.venue_id == null}
+                      style={styles.stopRowTapArea}
+                      accessibilityRole="button"
+                      accessibilityLabel={`View details for ${s.name}`}
+                    >
+                      <View style={styles.miniStopBadge}><Text style={styles.miniStopBadgeText}>{i + 1}</Text></View>
+                      <Text style={styles.miniStopName} numberOfLines={1}>{s.name}</Text>
+                    </Pressable>
                     <Pressable onPress={() => moveStop(i, -1)} disabled={i === 0} hitSlop={6} accessibilityLabel={`Move ${s.name} up`}>
                       <Feather name="chevron-up" size={15} color={i === 0 ? colors.border : colors.muted} />
                     </Pressable>
@@ -857,6 +990,20 @@ export default function UnifiedPlannerScreen() {
         </div>
       )}
 
+      {/* Venue detail panel — right side, over the map (FR-I1/I2). */}
+      {!mapError && openVenue && (
+        <VenueDetailPanel
+          venue={venueDetail}
+          loading={venueDetailLoading}
+          error={venueDetailError}
+          liveCount={venueLive?.count ?? null}
+          liveLoading={venueLiveLoading}
+          liveError={venueLiveError}
+          onClose={closeVenuePanel}
+          onViewRoutes={closeVenuePanel}
+        />
+      )}
+
       {/* Error overlay */}
       {mapError && (
         <View style={styles.overlay}>
@@ -925,6 +1072,7 @@ const styles = StyleSheet.create({
   secondaryBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 6, paddingHorizontal: spacing.sm, minHeight: 36 },
   secondaryBtnText: { fontFamily: 'Barlow_600SemiBold', fontSize: 12, color: colors.primary },
   miniStopRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: 4 },
+  stopRowTapArea: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flex: 1 },
   stopRow: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.mutedBg, borderRadius: radius.sm, padding: 8 },
   miniStopBadge: { width: 20, height: 20, borderRadius: 10, backgroundColor: colors.gold, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   miniStopBadgeText: { fontFamily: 'BarlowCondensed_700Bold', fontSize: 11, color: '#1A0A00' },

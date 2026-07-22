@@ -63,10 +63,6 @@ function RootLayoutNav() {
               name="comparison"
               options={{ presentation: 'modal', title: 'Getting There' }}
             />
-            <Stack.Screen
-              name="venue/[id]"
-              options={{ presentation: 'modal', title: 'Venue Info' }}
-            />
           </Stack>
         </ThemeProvider>
       </TripProvider>
