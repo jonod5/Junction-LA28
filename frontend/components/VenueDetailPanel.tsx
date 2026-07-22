@@ -145,7 +145,7 @@ export function VenueDetailPanel({ venue, loading, error, liveCount, liveLoading
 }
 
 const PANEL_CSS: React.CSSProperties = {
-  position: 'absolute', top: 12, right: 12, width: 340,
+  position: 'absolute', top: 12, right: 12, width: 380,
   maxHeight: 'calc(100% - 24px)', overflowY: 'auto',
   background: 'rgba(255,255,255,0.97)', backdropFilter: 'blur(6px)',
   borderRadius: 14, padding: 16, boxShadow: '0 4px 20px rgba(0,0,0,0.18)', zIndex: 11,
@@ -153,23 +153,25 @@ const PANEL_CSS: React.CSSProperties = {
 };
 
 function TransitRow({ transit }: { transit: TransitAccess }) {
-  const parts = [
-    transit.walk_time_min != null ? `${transit.walk_time_min} min walk` : null,
-    transit.nearest_metro_station,
-    transit.bus_lines_serving,
-  ].filter(Boolean);
+  // nearest_metro_station often just repeats stop_name for rail entries —
+  // only show it when it's actually a different (transfer) station.
+  const metroDiffers =
+    transit.nearest_metro_station && transit.nearest_metro_station !== transit.stop_name;
   return (
-    <View style={styles.chipRow}>
-      {transit.line && (
-        <View style={styles.chip}>
-          <Text style={styles.chipText}>{transit.line}</Text>
-        </View>
-      )}
-      <Text style={styles.chipRowText} numberOfLines={2}>
-        {transit.stop_name ? `${transit.stop_name}` : ''}
-        {transit.stop_name && parts.length ? ' · ' : ''}
-        {parts.join(' · ')}
-      </Text>
+    <View style={styles.transitBlock}>
+      <View style={styles.chipRow}>
+        {transit.line && (
+          <View style={styles.chip}>
+            <Text style={styles.chipText}>{transit.line}</Text>
+          </View>
+        )}
+        {transit.stop_name && <Text style={styles.transitStop}>{transit.stop_name}</Text>}
+        {transit.walk_time_min != null && (
+          <Text style={styles.transitWalk}>{transit.walk_time_min} min walk</Text>
+        )}
+      </View>
+      {metroDiffers && <Text style={styles.transitSub}>Transfer: {transit.nearest_metro_station}</Text>}
+      {transit.bus_lines_serving && <Text style={styles.transitSub}>Bus: {transit.bus_lines_serving}</Text>}
     </View>
   );
 }
@@ -199,7 +201,7 @@ function ParkingRow({ parking }: { parking: ParkingOption }) {
   const hasPrice = parking.price_min != null || parking.price_max != null;
   return (
     <View style={styles.parkingRow}>
-      <Text style={styles.parkingName} numberOfLines={1}>{parking.lot_name ?? 'Lot'}</Text>
+      <Text style={styles.parkingName}>{parking.lot_name ?? 'Lot'}</Text>
       {hasPrice && (
         <Text style={styles.parkingPrice}>
           {parking.price_min != null && parking.price_max != null
@@ -230,13 +232,17 @@ const styles = StyleSheet.create({
   chip: { backgroundColor: colors.secondary, borderRadius: radius.sm, paddingHorizontal: 6, paddingVertical: 2 },
   chipText: { fontFamily: 'Barlow_600SemiBold', fontSize: 11, color: colors.onPrimary },
   chipRowText: { fontFamily: 'Barlow_400Regular', fontSize: 12, color: colors.muted, flexShrink: 1 },
+  transitBlock: { gap: 3 },
+  transitStop: { fontFamily: 'Barlow_600SemiBold', fontSize: 12, color: colors.foreground },
+  transitWalk: { fontFamily: 'Barlow_400Regular', fontSize: 12, color: colors.muted },
+  transitSub: { fontFamily: 'Barlow_400Regular', fontSize: 11.5, color: colors.muted, lineHeight: 16, paddingLeft: 2 },
   plainRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 6 },
   plainRowText: { fontFamily: 'Barlow_400Regular', fontSize: 12, color: colors.foreground, flex: 1, lineHeight: 17 },
   collapseBlock: { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.xs },
   collapseHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 4 },
   collapseTitle: { fontFamily: 'Barlow_600SemiBold', fontSize: 12, color: colors.muted, flex: 1 },
-  parkingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
-  parkingName: { fontFamily: 'Barlow_500Medium', fontSize: 12, color: colors.foreground, flex: 1 },
+  parkingRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: spacing.sm },
+  parkingName: { fontFamily: 'Barlow_500Medium', fontSize: 12, color: colors.foreground, flex: 1, lineHeight: 16 },
   parkingPrice: { fontFamily: 'BarlowCondensed_700Bold', fontSize: 14, color: colors.accent },
   proseText: { fontFamily: 'Barlow_400Regular', fontSize: 12, color: colors.muted, lineHeight: 17 },
   actionBtn: {
