@@ -80,11 +80,14 @@ pass should tighten them against the published service-area maps.
 ## Live transit (Swiftly GTFS-RT) — `app/ingest/transit_rt.py`
 
 Live **vehicle positions** work via Swiftly (`SWIFTLY_API_KEY`, server-side).
-Two follow-ons, not blockers for the demo:
+One follow-on, not a blocker for the demo:
 
-- **Rail feed access** — the `lametro-rail` agency currently returns **403** on
-  our key, so rail lines (A/B/C/D/E/K) fall back to "scheduled". Confirm the key
-  has rail scope or the correct Swiftly agency slug; adjust `SWIFTLY_AGENCIES`.
+- ~~**Rail feed access**~~ — **resolved 2026-07-23.** Swiftly approved rail
+  scope on our key; `lametro-rail` no longer 403s. Confirmed live against
+  `/api/vehicles` (135 rail vehicles, `errors: {}`) and `/api/transit/live`
+  (A/E/K lines all report `"status": "live"` with real vehicle counts). No
+  code change was needed — `_DEFAULT_AGENCIES` already included
+  `lametro-rail`; it was purely blocked on API access, not on logic.
 - **True delay / next-arrival** — we surface "is the line running live + how many
   vehicles", not per-stop arrival predictions. Those need the GTFS **static**
   schedule loaded (FR-G1) to map a boarding stop → stop_id. Load static, then
