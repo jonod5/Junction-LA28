@@ -290,8 +290,11 @@ const styles = StyleSheet.create({
   arrivalText: { fontFamily: 'Barlow_600SemiBold', fontSize: 13, color: colors.foreground },
   sectionLabel: { fontFamily: 'Barlow_700Bold', fontSize: 10, color: colors.muted, letterSpacing: 0.6 },
   chipRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
-  chip: { backgroundColor: colors.secondary, borderRadius: radius.sm, paddingHorizontal: 6, paddingVertical: 2 },
-  chipText: { fontFamily: 'Barlow_600SemiBold', fontSize: 11, color: colors.onPrimary },
+  // maxWidth caps a long line name/pill at the panel's width instead of
+  // overflowing it — RN's default flexShrink:0 otherwise refuses to shrink
+  // and the box just runs past the edge, getting clipped by the panel.
+  chip: { maxWidth: '100%', backgroundColor: colors.secondary, borderRadius: radius.sm, paddingHorizontal: 6, paddingVertical: 2 },
+  chipText: { fontFamily: 'Barlow_600SemiBold', fontSize: 11, color: colors.onPrimary, flexShrink: 1 },
   transitBlock: { gap: 6, paddingBottom: 2 },
   transitStop: { fontFamily: 'Barlow_600SemiBold', fontSize: 12, color: colors.foreground },
   transitWalk: { fontFamily: 'Barlow_400Regular', fontSize: 12, color: colors.muted },
@@ -301,8 +304,8 @@ const styles = StyleSheet.create({
   factLabel: { fontFamily: 'Barlow_700Bold', fontSize: 12.5, color: colors.foreground },
   factSep: { color: colors.muted },
   pillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginTop: 1 },
-  pill: { backgroundColor: colors.mutedBg, borderRadius: radius.sm, paddingHorizontal: 6, paddingVertical: 3 },
-  pillText: { fontFamily: 'Barlow_500Medium', fontSize: 11, color: colors.foreground },
+  pill: { maxWidth: '100%', backgroundColor: colors.mutedBg, borderRadius: radius.sm, paddingHorizontal: 6, paddingVertical: 3 },
+  pillText: { fontFamily: 'Barlow_500Medium', fontSize: 11, color: colors.foreground, flexShrink: 1 },
   collapseBlock: { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.xs },
   collapseHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 4 },
   collapseTitle: { fontFamily: 'Barlow_600SemiBold', fontSize: 12, color: colors.muted, flex: 1 },

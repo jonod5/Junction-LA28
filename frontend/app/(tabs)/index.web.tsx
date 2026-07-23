@@ -74,6 +74,16 @@ function toLngLat(encoded: string) {
   return decodePolyline(encoded).map((p) => ({ lat: p.latitude, lng: p.longitude }));
 }
 
+function distanceMeters(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
+  const R = 6371000;
+  const dLat = ((b.lat - a.lat) * Math.PI) / 180;
+  const dLng = ((b.lng - a.lng) * Math.PI) / 180;
+  const la1 = (a.lat * Math.PI) / 180;
+  const la2 = (b.lat * Math.PI) / 180;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(la1) * Math.cos(la2) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
 // ── Route-mode colors/labels (mirrors app/services/route_engine.MODE_LABEL) ──
 const MODE_COLORS: Record<string, string> = {
   walk: colors.primary,
@@ -531,12 +541,19 @@ export default function UnifiedPlannerScreen() {
       });
     });
 
-    if (stops.length === 1) {
-      map.setCenter({ lat: stops[0].lat, lng: stops[0].lng });
-      map.setZoom(14);
-    } else {
-      map.fitBounds(bounds, 80);
+    // Skip when a venue panel is open — that view (zoomed on the venue) owns
+    // the camera then, and this effect resetting to the whole-itinerary
+    // fit-to-stops view on every marker refresh is exactly the "zooms out
+    // instead of in" bug.
+    if (!openVenue) {
+      if (stops.length === 1) {
+        map.setCenter({ lat: stops[0].lat, lng: stops[0].lng });
+        map.setZoom(14);
+      } else {
+        map.fitBounds(bounds, 80);
+      }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stops, renderSteps]);
 
   // ── Candidate markers — venues/airports NOT yet added; click adds them ───
@@ -708,18 +725,32 @@ export default function UnifiedPlannerScreen() {
       fitBoundsToStops();
       return;
     }
-    const relatedPoints = VENUE_TRANSIT.filter((p) => p.venueIds.includes(openVenue.id));
-    if (relatedPoints.length === 0) {
-      map.setCenter({ lat: openVenue.lat, lng: openVenue.lng });
-      map.setZoom(15);
+    const venuePos = { lat: openVenue.lat, lng: openVenue.lng };
+    // Some venues' nearest "related" transit point is a mile-plus shuttle
+    // stop (e.g. Rose Bowl's Old Town Pasadena connection) — fitting bounds
+    // to include those zoomed the map OUT instead of in. Only chase points
+    // close enough to actually share a "zoomed in on the venue" view;
+    // farther ones still get highlighted, just not forced into frame.
+    const nearbyPoints = VENUE_TRANSIT.filter(
+      (p) => p.venueIds.includes(openVenue.id) && distanceMeters(venuePos, p) <= 1200,
+    );
+    if (nearbyPoints.length === 0) {
+      map.setCenter(venuePos);
+      map.setZoom(16);
       return;
     }
     const bounds = new window.google.maps.LatLngBounds();
-    bounds.extend({ lat: openVenue.lat, lng: openVenue.lng });
-    relatedPoints.forEach((p) => bounds.extend({ lat: p.lat, lng: p.lng }));
-    // Right padding clears the venue panel (340px wide + margin); left/top/
+    bounds.extend(venuePos);
+    nearbyPoints.forEach((p) => bounds.extend({ lat: p.lat, lng: p.lng }));
+    // Right padding clears the venue panel (380px wide + margin); left/top/
     // bottom padding keeps the venue off the very edge.
     map.fitBounds(bounds, { top: 80, right: 400, bottom: 80, left: 80 });
+    // fitBounds can still land on a wider zoom than expected with a tight
+    // cluster in a small viewport — floor it so opening a venue never reads
+    // as "zooming out".
+    window.google.maps.event.addListenerOnce(map, 'idle', () => {
+      if ((map.getZoom() ?? 0) < 14) map.setZoom(14);
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openVenue, mapReady]);
 
