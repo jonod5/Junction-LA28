@@ -419,6 +419,14 @@ export default function UnifiedPlannerScreen() {
           mapTypeControl: false,
           streetViewControl: false,
           fullscreenControl: true,
+          // The default "camera control" widget expands into a 3x3 pan/zoom
+          // pad on click, which overlapped the legend in the bottom-right
+          // corner. Use the classic compact zoom control instead, moved up
+          // next to the fullscreen button so the bottom-right corner is
+          // free for the legend.
+          cameraControl: false,
+          zoomControl: true,
+          zoomControlOptions: { position: window.google.maps.ControlPosition.RIGHT_TOP },
           gestureHandling: 'greedy',
           styles: MAP_STYLE,
         });
