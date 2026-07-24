@@ -1,8 +1,8 @@
 import { Feather } from '@expo/vector-icons';
-import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { StyleSheet, Text } from 'react-native';
 
-import { colors, radius, spacing } from '@/constants/theme';
+import { gradients, radius, spacing } from '@/constants/theme';
 
 interface Props {
   text: string;
@@ -11,7 +11,12 @@ interface Props {
 
 export function PolicyBanner({ text, compact = false }: Props) {
   return (
-    <View style={[styles.banner, compact && styles.compact]}>
+    <LinearGradient
+      colors={gradients.sunset}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 0.3 }}
+      style={[styles.banner, compact && styles.compact]}
+    >
       <Feather name="alert-circle" size={compact ? 14 : 18} color="#FFFFFF" style={styles.icon} />
       <Text
         style={[styles.text, compact && styles.textCompact]}
@@ -20,7 +25,7 @@ export function PolicyBanner({ text, compact = false }: Props) {
       >
         {text}
       </Text>
-    </View>
+    </LinearGradient>
   );
 }
 
@@ -28,7 +33,6 @@ const styles = StyleSheet.create({
   banner: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    backgroundColor: colors.policyBanner,
     borderRadius: radius.md,
     padding: spacing.md,
     gap: spacing.sm,

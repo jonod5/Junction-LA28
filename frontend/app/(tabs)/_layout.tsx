@@ -1,12 +1,13 @@
 import { Feather } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
 
 import { useClientOnlyValue } from '@/components/useClientOnlyValue';
+import { gradients } from '@/constants/theme';
 
 const NAV_BG = '#070C1C';       // deep navy
 const NAV_ACTIVE = '#F59E0B';   // Olympic gold
 const NAV_INACTIVE = '#5B7CB8'; // muted blue-gray
-const HEADER_BG = '#1B4FD8';    // electric blue
 
 export default function TabLayout() {
   return (
@@ -24,7 +25,16 @@ export default function TabLayout() {
           fontSize: 11,
           letterSpacing: 0.5,
         },
-        headerStyle: { backgroundColor: HEADER_BG },
+        // Signature "LA28 sunset" gradient header — magenta into orange into
+        // gold — instead of a flat brand color.
+        headerBackground: () => (
+          <LinearGradient
+            colors={gradients.sunset}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={{ flex: 1 }}
+          />
+        ),
         headerTintColor: '#FFFFFF',
         headerTitleStyle: {
           fontFamily: 'BarlowCondensed_700Bold',

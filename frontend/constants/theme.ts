@@ -1,10 +1,21 @@
+// ── LA28 brand palette ────────────────────────────────────────────────────
+// Poppy, Scarlet Flax, Bluebell, Sagebrush — the official LA28 2028 hues.
+// Kept as named exports too so gradient stops can reference them directly
+// instead of duplicating hex values.
+export const brand = {
+  poppy: '#FF6600',
+  scarletFlax: '#E60067',
+  bluebell: '#2B6CB0',
+  sagebrush: '#48BB78',
+} as const;
+
 export const colors = {
-  // ── Olympic electric blue ──────────────────────────────────────────────────
-  primary: '#1B4FD8',
+  // ── Bluebell — deep electric sky blue ─────────────────────────────────────
+  primary: brand.bluebell,
   onPrimary: '#FFFFFF',
-  secondary: '#0891B2',    // cyan — transit / map
-  gold: '#F59E0B',         // Olympic gold — badges, active nav
-  accent: '#EA580C',       // warm orange — kept for contrast
+  secondary: brand.scarletFlax,  // saturated magenta-pink — transit / map
+  gold: '#F59E0B',                // Olympic gold — badges, active nav, sunset highlight
+  accent: brand.poppy,            // radiant orange — CTAs, warm contrast
 
   // ── Backgrounds — cool blue-white ─────────────────────────────────────────
   background: '#F0F5FF',
@@ -21,12 +32,21 @@ export const colors = {
 
   // ── State ─────────────────────────────────────────────────────────────────
   destructive: '#DC2626',
-  success: '#059669',
+  success: '#059669',             // distinct from primary's sagebrush so "done" still reads apart from "brand"
 
   // ── Semantic ──────────────────────────────────────────────────────────────
-  policyBanner: '#1E1B4B',
-  transitBadge: '#0891B2',
+  transitBadge: brand.scarletFlax,
   drivingWarning: '#DC2626',
+} as const;
+
+// Reusable "LA28 sunset" gradient stops — magenta into orange into gold,
+// mirroring the brand's radiating sunset motif. Used with expo-linear-gradient
+// for the header and hero surfaces; kept as plain hex arrays so both
+// LinearGradient (native+web) and raw CSS strings (web-only surfaces) can
+// consume the same source of truth.
+export const gradients = {
+  sunset: [brand.scarletFlax, brand.poppy, '#F59E0B'] as [string, string, string],
+  sunsetSoft: ['#FDE9F0', '#FFE3CC', '#FFF3D6'] as [string, string, string],
 } as const;
 
 export const spacing = {
@@ -49,14 +69,14 @@ export const radius = {
 // Blue-tinted shadows for depth with brand alignment
 export const shadow = {
   sm: {
-    shadowColor: '#1B4FD8',
+    shadowColor: brand.bluebell,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.10,
     shadowRadius: 8,
     elevation: 3,
   },
   md: {
-    shadowColor: '#1B4FD8',
+    shadowColor: brand.bluebell,
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.16,
     shadowRadius: 20,
