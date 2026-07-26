@@ -1,21 +1,23 @@
-// ── LA28 brand palette ────────────────────────────────────────────────────
-// Poppy, Scarlet Flax, Bluebell, Sagebrush — the official LA28 2028 hues.
-// Kept as named exports too so gradient stops can reference them directly
-// instead of duplicating hex values.
+// ── Bluebell + twilight palette ────────────────────────────────────────────
+// Primary is back to Bluebell (the original LA28 brand blue), accented with
+// an adjacent violet/purple — a blue -> indigo -> purple progression, with
+// warm gold and a green "eco" as the two functional counterpoints so the
+// whole scheme doesn't read as one temperature.
 export const brand = {
-  poppy: '#FF6600',
-  scarletFlax: '#E60067',
-  bluebell: '#2B6CB0',
-  sagebrush: '#48BB78',
+  bluebell: '#2B6CB0',   // primary — the original LA28 blue
+  indigo: '#6366F1',     // adjacent purple, one step toward violet from bluebell
+  violet: '#9333EA',     // adjacent purple, one step further — secondary
+  gold: '#F59E0B',       // warm counterpoint — Olympic gold
+  sagebrush: '#48BB78',  // green counterpoint — "eco" / sustainability
 } as const;
 
 export const colors = {
-  // ── Bluebell — deep electric sky blue ─────────────────────────────────────
   primary: brand.bluebell,
   onPrimary: '#FFFFFF',
-  secondary: brand.scarletFlax,  // saturated magenta-pink — transit / map
-  gold: '#F59E0B',                // Olympic gold — badges, active nav, sunset highlight
-  accent: brand.poppy,            // radiant orange — CTAs, warm contrast
+  secondary: brand.violet,        // purple pop — transit / map
+  gold: brand.gold,               // badges, active nav, "best option"
+  accent: brand.indigo,           // the adjacent-purple accent, between primary and secondary
+  eco: brand.sagebrush,           // green counterpoint — banners / grounding accent
 
   // ── Backgrounds — cool blue-white ─────────────────────────────────────────
   background: '#F0F5FF',
@@ -32,21 +34,19 @@ export const colors = {
 
   // ── State ─────────────────────────────────────────────────────────────────
   destructive: '#DC2626',
-  success: '#059669',             // distinct from primary's sagebrush so "done" still reads apart from "brand"
+  success: '#059669',
 
   // ── Semantic ──────────────────────────────────────────────────────────────
-  transitBadge: brand.scarletFlax,
+  transitBadge: brand.violet,
   drivingWarning: '#DC2626',
 } as const;
 
-// Reusable "LA28 sunset" gradient stops — magenta into orange into gold,
-// mirroring the brand's radiating sunset motif. Used with expo-linear-gradient
-// for the header and hero surfaces; kept as plain hex arrays so both
-// LinearGradient (native+web) and raw CSS strings (web-only surfaces) can
-// consume the same source of truth.
+// Blue -> indigo -> violet sweep — the primary/accent/secondary progression
+// as one continuous "twilight" ramp, gold as a warm cap at the end.
 export const gradients = {
-  sunset: [brand.scarletFlax, brand.poppy, '#F59E0B'] as [string, string, string],
-  sunsetSoft: ['#FDE9F0', '#FFE3CC', '#FFF3D6'] as [string, string, string],
+  twilight: [brand.bluebell, brand.indigo, brand.violet, brand.gold] as [
+    string, string, string, string,
+  ],
 } as const;
 
 export const spacing = {

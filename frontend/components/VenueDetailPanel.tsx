@@ -318,7 +318,7 @@ const styles = StyleSheet.create({
   lotItem: { fontFamily: 'Barlow_400Regular', fontSize: 11.5, color: colors.muted, lineHeight: 16 },
   actionBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: spacing.sm, minHeight: 40, marginTop: spacing.xs,
+    backgroundColor: colors.eco, borderRadius: radius.md, paddingVertical: spacing.sm, minHeight: 40, marginTop: spacing.xs,
   },
   actionBtnText: { fontFamily: 'Barlow_700Bold', fontSize: 13, color: colors.onPrimary },
 });
