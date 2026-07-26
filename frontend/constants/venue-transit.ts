@@ -1,6 +1,8 @@
 // Hand-verified transit + mobility data for all 6 LA28 venues.
 // Source: Venue_Data_Collection.pdf (UCLA SURP 2026, July 2026, field-verified).
 
+import { brand } from '@/constants/theme';
+
 export type TransitLayer = 'rail' | 'bus' | 'bike' | 'scooter' | 'dropoff';
 
 export interface VenueTransitPoint {
@@ -21,10 +23,10 @@ export const TRANSIT_LAYER_CONFIG: Record<
   { label: string; fill: string; displayName: string }
 > = {
   rail:    { label: 'M', fill: '#1B4FD8', displayName: 'Metro Rail' },
-  bus:     { label: 'B', fill: '#92400E', displayName: 'Bus Stop' },
-  bike:    { label: 'W', fill: '#0891B2', displayName: 'Bike Share' },
-  scooter: { label: 'E', fill: '#4D7C0F', displayName: 'Scooter Zone' },
-  dropoff: { label: 'P', fill: '#DC2626', displayName: 'Rideshare P/U' },
+  bus:     { label: 'B', fill: brand.poppy, displayName: 'Bus Stop' },   // orange
+  bike:    { label: 'W', fill: '#DC2626', displayName: 'Bike Share' },   // Metro Bike -> red
+  scooter: { label: 'E', fill: '#00D66D', displayName: 'Scooter Zone' }, // Bird green (approx. — Bird's brand green isn't in a public brand-kit hex, adjust if you have the exact value)
+  dropoff: { label: 'P', fill: '#FF00BF', displayName: 'Rideshare P/U' }, // Lyft magenta/pink
 };
 
 export const VENUE_TRANSIT: VenueTransitPoint[] = [
