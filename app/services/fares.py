@@ -33,16 +33,36 @@ BIKE_INCLUDED_MIN = 30
 BIKE_PER_MIN_OVERAGE_USD = 0.15
 
 # ── Rideshare (modeled estimate) ──────────────────────────────────────────────
-# Point estimate for LA UberX/Lyft standard.  These are deliberately stable
-# modeled values, not live prices.  Source: composite of published LA-market
-# rate cards, 2026-07.  # VERIFY before 8/5
-RIDESHARE_BASE_USD = 2.55
-RIDESHARE_PER_MILE_USD = 1.05
-RIDESHARE_PER_MIN_USD = 0.34
-RIDESHARE_MIN_FARE_USD = 8.00
-# LAX charges a per-trip pickup surcharge on TNC trips; modeled separately so it
-# only applies to LAX legs.  Source: flylax.com TNC info.  # VERIFY before 8/5
-LAX_PICKUP_FEE_USD = 4.00
+# Point estimate for LA UberX/Lyft standard, fit by least-squares regression
+# against 45 real UberX quotes gathered across all 6 venue pairs + 5 airports
+# (own research, gathered 2026-07-29 — see docs/estimates-to-verify.md for the
+# full source data and fit residuals).  The previous constants (composite of
+# published rate cards) underpriced real trips by a mean of $20/trip, worst
+# case >4x low — rate-card base fares don't capture LA's actual traffic-heavy
+# per-minute cost.  Confirmed 2026-07-29.
+RIDESHARE_BASE_USD = 16.00
+RIDESHARE_PER_MILE_USD = 0.25
+RIDESHARE_PER_MIN_USD = 0.65
+# BASE_USD alone already exceeds this for any non-negative trip, so the floor
+# is only reachable for degenerate (zero-distance/duration) inputs — kept as
+# an explicit floor rather than relying on that being incidentally true.
+RIDESHARE_MIN_FARE_USD = 9.00
+# Airports charge/imply a per-trip TNC pickup premium beyond plain
+# distance+time — modeled per-airport, not as a single LAX-only flag.
+# Refit 2026-07-29 against real driving distances (Google Maps, hand-
+# gathered) for all 30 airport<->venue quotes, replacing the earlier
+# haversine-based fit: real distances confirmed BUR's premium is genuine
+# (barely changed switching from haversine to real miles — ~$26 either way),
+# not a distance-estimation artifact. ONT is omitted: its excess over the
+# venue<->venue model was ~$0-2 and sometimes negative — not distinguishable
+# from noise, i.e. ONT trips are already well explained by distance + time
+# alone (long, mostly-freeway routes where the model holds up).
+AIRPORT_PICKUP_FEE_USD: dict[str, float] = {
+    "LAX": 9.00,   # flylax.com also documents a real LAX TNC pickup fee — consistent with the fit
+    "BUR": 26.00,  # by far the largest — small/congested curb, real Sepulveda Pass congestion
+    "LGB": 4.00,
+    "VNY": 4.00,
+}
 
 # ── Metro Micro (on-demand microtransit) ──────────────────────────────────────
 # Mirrors app/data/metro_micro (kept there as the single source of truth); the
@@ -114,12 +134,11 @@ def micromobility_cost(
     return round(SCOOTER_UNLOCK_USD + SCOOTER_PER_MIN_USD * minutes, 2)
 
 
-def rideshare_estimate(distance_m: float, duration_s: float, lax_pickup: bool = False) -> float:
-    """Modeled rideshare fare.  `lax_pickup` adds the LAX TNC surcharge."""
+def rideshare_estimate(distance_m: float, duration_s: float, airport_code: str | None = None) -> float:
+    """Modeled rideshare fare.  `airport_code` (e.g. "LAX") adds that airport's pickup fee, if any."""
     miles = max(0.0, distance_m) / _METERS_PER_MILE
     minutes = max(0.0, duration_s) / 60.0
     fare = RIDESHARE_BASE_USD + RIDESHARE_PER_MILE_USD * miles + RIDESHARE_PER_MIN_USD * minutes
     fare = max(fare, RIDESHARE_MIN_FARE_USD)
-    if lax_pickup:
-        fare += LAX_PICKUP_FEE_USD
+    fare += AIRPORT_PICKUP_FEE_USD.get(airport_code or "", 0.0)
     return round(fare, 2)

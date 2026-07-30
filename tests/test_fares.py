@@ -53,8 +53,37 @@ def test_micromobility_bike_included_minutes():
     assert fares.micromobility_cost(20, "bike", None) == fares.BIKE_UNLOCK_USD
 
 
-def test_rideshare_applies_minimum_and_lax_fee():
-    # Very short trip clamps to the minimum fare.
-    assert fares.rideshare_estimate(100, 60) == fares.RIDESHARE_MIN_FARE_USD
-    with_lax = fares.rideshare_estimate(100, 60, lax_pickup=True)
-    assert with_lax == round(fares.RIDESHARE_MIN_FARE_USD + fares.LAX_PICKUP_FEE_USD, 2)
+def test_rideshare_computes_from_distance_and_duration():
+    miles, minutes = 2.0, 10.0
+    expected = round(
+        fares.RIDESHARE_BASE_USD
+        + fares.RIDESHARE_PER_MILE_USD * miles
+        + fares.RIDESHARE_PER_MIN_USD * minutes,
+        2,
+    )
+    assert fares.rideshare_estimate(miles * fares._METERS_PER_MILE, minutes * 60) == expected
+
+
+def test_rideshare_applies_airport_fee():
+    fare = fares.rideshare_estimate(1000, 300)
+    with_lax = fares.rideshare_estimate(1000, 300, airport_code="LAX")
+    assert round(with_lax - fare, 2) == fares.AIRPORT_PICKUP_FEE_USD["LAX"]
+
+
+def test_rideshare_no_fee_for_unlisted_airport():
+    # ONT is deliberately not in the fee table — its measured excess wasn't
+    # distinguishable from noise (see fares.py comment).
+    fare = fares.rideshare_estimate(1000, 300)
+    ont = fares.rideshare_estimate(1000, 300, airport_code="ONT")
+    assert ont == fare
+
+
+def test_rideshare_clamps_to_minimum_fare(monkeypatch):
+    # RIDESHARE_BASE_USD alone exceeds RIDESHARE_MIN_FARE_USD under the
+    # current calibration, so the floor is never normally reached — isolate
+    # the max()-clamp logic itself from that calibration to confirm it still
+    # holds if the base ever drops below the floor again.
+    monkeypatch.setattr(fares, "RIDESHARE_BASE_USD", 1.0)
+    monkeypatch.setattr(fares, "RIDESHARE_PER_MILE_USD", 0.0)
+    monkeypatch.setattr(fares, "RIDESHARE_PER_MIN_USD", 0.0)
+    assert fares.rideshare_estimate(0, 0) == fares.RIDESHARE_MIN_FARE_USD

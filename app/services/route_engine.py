@@ -80,10 +80,19 @@ METRO_MICRO_WAIT_MIN = metro_micro.MAX_WAIT_MIN
 
 MAX_OPTIONS = 12
 
-# LAX — trips touching it carry the TNC pickup surcharge and are a common
-# origin (tourists landing).  Simple radius test.
-_LAX = (33.9425, -118.4081)
-_LAX_RADIUS_M = 2000
+# Airports — trips touching one may carry a TNC pickup surcharge (see
+# fares.AIRPORT_PICKUP_FEE_USD) and airport legs are a common origin
+# (tourists landing).  Simple radius test per airport.
+# Coordinates: frontend/constants/airports.ts (kept in sync by hand — small,
+# static list).
+_AIRPORTS: dict[str, tuple[float, float]] = {
+    "LAX": (33.9425, -118.4081),
+    "BUR": (34.2007, -118.3585),
+    "LGB": (33.8117, -118.1516),
+    "ONT": (34.0560, -117.6009),
+    "VNY": (34.2098, -118.4901),
+}
+_AIRPORT_RADIUS_M = 2000
 
 # Human-friendly label per primary mode.
 MODE_LABEL = {
@@ -100,8 +109,12 @@ def _speed(vehicle_type: str) -> float:
     return BIKE_SPEED_MPS if vehicle_type == "bike" else SCOOTER_SPEED_MPS
 
 
-def _is_lax(lat: float, lng: float) -> bool:
-    return gbfs.haversine_m(lat, lng, _LAX[0], _LAX[1]) <= _LAX_RADIUS_M
+def _airport_code(lat: float, lng: float) -> str | None:
+    """Which airport (if any) this point is within pickup range of."""
+    for code, (alat, alng) in _AIRPORTS.items():
+        if gbfs.haversine_m(lat, lng, alat, alng) <= _AIRPORT_RADIUS_M:
+            return code
+    return None
 
 
 def _micro_snapshot(lat: float, lng: float) -> dict:
@@ -320,8 +333,8 @@ def _build_direct_candidates(origin, dest, o_micro, d_micro) -> list[dict]:
     # Rideshare (driving proxy) — always feasible where a road route exists.
     drive = fetch_directions(o, d, "driving")
     if drive:
-        lax = _is_lax(*origin) or _is_lax(*dest)
-        cost = fares.rideshare_estimate(drive["distance_m"], drive["duration_s"], lax_pickup=lax)
+        airport = _airport_code(*origin) or _airport_code(*dest)
+        cost = fares.rideshare_estimate(drive["distance_m"], drive["duration_s"], airport_code=airport)
         out.append(_candidate(
             "rideshare", ["ridehail"], drive["duration_s"] / 60.0, cost, 0,
             [_leg("ridehail", drive["distance_m"], drive["duration_s"], drive["polyline"], drive["steps"])],
