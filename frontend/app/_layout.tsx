@@ -17,6 +17,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
 
 import { useColorScheme } from '@/components/useColorScheme';
+import { AuthProvider } from '@/lib/auth';
 import { TripProvider } from '@/lib/store';
 
 SplashScreen.preventAutoHideAsync();
@@ -55,17 +56,19 @@ function RootLayoutNav() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <TripProvider>
-        <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-          <Stack>
-            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-            <Stack.Screen
-              name="comparison"
-              options={{ presentation: 'modal', title: 'Getting There' }}
-            />
-          </Stack>
-        </ThemeProvider>
-      </TripProvider>
+      <AuthProvider>
+        <TripProvider>
+          <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+            <Stack>
+              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+              <Stack.Screen
+                name="comparison"
+                options={{ presentation: 'modal', title: 'Getting There' }}
+              />
+            </Stack>
+          </ThemeProvider>
+        </TripProvider>
+      </AuthProvider>
     </GestureHandlerRootView>
   );
 }

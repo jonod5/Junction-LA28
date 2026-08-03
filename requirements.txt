@@ -20,6 +20,9 @@ gtfs-realtime-bindings
 # Retry helper for DB startup wait (used in main.py lifespan)
 tenacity
 
+# Supabase JWT verification (JWKS/RS256 + HS256 shared-secret fallback)
+PyJWT[crypto]
+
 # Dev / CI tools (not needed in prod but harmless to install)
 ruff
 pytest

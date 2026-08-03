@@ -1,3 +1,5 @@
+import { supabase } from './supabase';
+
 // On production web (Vercel), use relative URLs — vercel.json rewrites /api/* to Railway.
 // On native or local dev, fall back to the explicit env var or localhost.
 function getBaseUrl(): string {
@@ -8,14 +10,19 @@ function getBaseUrl(): string {
 const BASE_URL = getBaseUrl();
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    ...options,
-  });
+  const headers: Record<string, string> = { 'Content-Type': 'application/json', ...(options?.headers as Record<string, string> | undefined) };
+  // Attaches the current Supabase session's access token when one exists —
+  // every endpoint that doesn't call get_current_user just ignores it, so
+  // this is safe to send unconditionally rather than threading an
+  // "is this an authed call" flag through every api.* function.
+  const { data } = await supabase.auth.getSession();
+  if (data.session?.access_token) headers['Authorization'] = `Bearer ${data.session.access_token}`;
+
+  const res = await fetch(`${BASE_URL}${path}`, { ...options, headers });
   if (res.status === 204) return undefined as T;
-  const data = await res.json();
-  if (!res.ok) throw new Error(data?.detail ?? `HTTP ${res.status}`);
-  return data as T;
+  const body = await res.json();
+  if (!res.ok) throw new Error(body?.detail ?? `HTTP ${res.status}`);
+  return body as T;
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
