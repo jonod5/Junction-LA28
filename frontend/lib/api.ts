@@ -257,6 +257,71 @@ export interface RouteOptimizeRequest {
   departure_time?: number | null;
 }
 
+// ── Saved itineraries ────────────────────────────────────────────────────────
+
+/** Shape of Itinerary.saved_plan — owned by this file, stored verbatim by the
+ *  backend. Legs are keyed by "<fromIndex>-<toIndex>" (stop order position),
+ *  not stop ids — ids are re-assigned every time a trip is rehydrated, but
+ *  position is stable. */
+export interface SavedStopSnapshot {
+  venue_id: number | null;
+  name: string;
+  lat: number;
+  lng: number;
+}
+
+export interface SavedLegSnapshot {
+  selected_option: RouteOption;
+}
+
+export interface SavedPlanSnapshot {
+  stops: SavedStopSnapshot[];
+  preferences: RouteMode[] | null;
+  legs: Record<string, SavedLegSnapshot>;
+}
+
+export interface Itinerary {
+  id: number;
+  name: string;
+  trip_date: string | null;
+  is_pinned: boolean;
+  saved_plan: SavedPlanSnapshot;
+  tags: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ItineraryListResult {
+  items: Itinerary[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface ItineraryListParams {
+  status?: 'upcoming' | 'past' | 'all';
+  tag?: string;
+  sort?: 'trip_date' | 'created_at' | 'updated_at';
+  order?: 'asc' | 'desc';
+  limit?: number;
+  offset?: number;
+}
+
+export interface ItineraryCreateBody {
+  name: string;
+  trip_date?: string | null;
+  is_pinned?: boolean;
+  tags?: string[];
+  saved_plan: SavedPlanSnapshot;
+}
+
+export interface ItineraryUpdateBody {
+  name?: string;
+  trip_date?: string | null;
+  is_pinned?: boolean;
+  tags?: string[];
+}
+
 // ── API ───────────────────────────────────────────────────────────────────────
 
 export const api = {
@@ -311,4 +376,23 @@ export const api = {
 
   getTransitLive: (line: string) =>
     request<TransitLiveStatus>(`/api/transit/live?line=${encodeURIComponent(line)}`),
+
+  listItineraries: (params: ItineraryListParams = {}) => {
+    const q = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined) q.set(k, String(v));
+    });
+    const qs = q.toString();
+    return request<ItineraryListResult>(`/api/itineraries${qs ? `?${qs}` : ''}`);
+  },
+
+  getItinerary: (id: number) => request<Itinerary>(`/api/itineraries/${id}`),
+
+  createItinerary: (body: ItineraryCreateBody) =>
+    request<Itinerary>('/api/itineraries', { method: 'POST', body: JSON.stringify(body) }),
+
+  updateItinerary: (id: number, body: ItineraryUpdateBody) =>
+    request<Itinerary>(`/api/itineraries/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+
+  deleteItinerary: (id: number) => request<void>(`/api/itineraries/${id}`, { method: 'DELETE' }),
 };

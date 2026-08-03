@@ -23,6 +23,7 @@ import {
 import { DeepLinkButtons } from '@/components/DeepLinkButtons';
 import { ModePreferencesChecklist } from '@/components/ModePreferencesChecklist';
 import { PolicyBanner } from '@/components/PolicyBanner';
+import { SaveItineraryDialog } from '@/components/SaveItineraryDialog';
 import { StopSearch, type SearchItem } from '@/components/StopSearch';
 import { VenueDetailPanel } from '@/components/VenueDetailPanel';
 import { AIRPORTS } from '@/constants/airports';
@@ -34,6 +35,7 @@ import {
   type VenueTransitPoint,
 } from '@/constants/venue-transit';
 import { VENUES } from '@/constants/venues';
+import { useAuth } from '@/lib/auth';
 import {
   api,
   DirectionStep,
@@ -44,6 +46,7 @@ import {
   type VenueDetail,
 } from '@/lib/api';
 import { linksForModes, type Place } from '@/lib/deeplinks';
+import { clearPendingSave, readPendingSave, stashPendingSave } from '@/lib/pendingSave';
 import { decodePolyline, formatDistance, formatDuration } from '@/lib/polyline';
 import { ROUTE_MODES, useTrip } from '@/lib/store';
 
@@ -306,7 +309,9 @@ export default function UnifiedPlannerScreen() {
     preferences, setPreferences,
     routeOptions, routeOptionsLoading, routeOptionsError, selectedOptionId,
     optimizeLeg, selectRouteOption,
+    hydrating, buildSnapshot, hydrateFromSnapshot,
   } = useTrip();
+  const { user, loading: authLoading, isConfigured: authConfigured, signInWithGoogle } = useAuth();
   const router = useRouter();
 
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -332,13 +337,27 @@ export default function UnifiedPlannerScreen() {
   const [liveError, setLiveError] = useState<string | null>(null);
 
   // ── Onboarding (FR-U3): destination search → mode preferences → done ───────
-  const [onboardingDone, setOnboardingDone] = useState(false);
+  // Lazy-initialized from context rather than hardcoded false: a saved
+  // itinerary is hydrated into `trip` *before* this screen (re)mounts (see
+  // "My Itineraries" → open), so if stops already exist at mount time the
+  // wizard should be skipped straight to the trip view.
+  const [onboardingDone, setOnboardingDone] = useState(() => (trip?.stops.length ?? 0) > 0);
   const [wizardStep, setWizardStep] = useState<'destination' | 'preferences'>('destination');
   const [draftPrefs, setDraftPrefs] = useState<RouteMode[]>(ROUTE_MODES);
 
   const [addingStop, setAddingStop] = useState(false);
   const [prefsOpen, setPrefsOpen] = useState(false);
   const [expandedLeg, setExpandedLeg] = useState<string | null>(null);
+
+  // ── Save itinerary dialog ────────────────────────────────────────────────
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [saveDialogInitial, setSaveDialogInitial] = useState<{ name: string; tripDate: string | null; tags: string[] }>({
+    name: trip?.name ?? 'My LA28 Trip',
+    tripDate: null,
+    tags: [],
+  });
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // ── Venue detail panel (FR-I1/I2) — right-side, docked over the map ───────
   const [openVenue, setOpenVenue] = useState<{ id: number; lat: number; lng: number } | null>(null);
@@ -360,6 +379,28 @@ export default function UnifiedPlannerScreen() {
       createTrip('My LA28 Trip');
     }
   }, [trip, loading, createTrip]);
+
+  // Resume a save that was interrupted by the sign-in redirect: a signed-out
+  // "Save" tap stashes the in-progress plan to localStorage before calling
+  // signInWithGoogle() (which does a full-page redirect on web, wiping all
+  // React state). Once we come back with a session, rehydrate that plan and
+  // reopen the save dialog pre-filled — the user still confirms explicitly,
+  // this just means they don't have to rebuild the trip from scratch.
+  useEffect(() => {
+    if (authLoading || !user) return;
+    const pending = readPendingSave();
+    if (!pending) return;
+    clearPendingSave();
+    (async () => {
+      const ok = await hydrateFromSnapshot(pending.snapshot);
+      if (ok) {
+        setOnboardingDone(true);
+        setSaveDialogInitial({ name: pending.name, tripDate: pending.tripDate, tags: pending.tags });
+        setSaveDialogOpen(true);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authLoading, user]);
 
   const stops = [...(trip?.stops ?? [])].sort((a, b) => a.order_index - b.order_index);
   const addedNames = stops.map((s) => s.name);
@@ -776,6 +817,36 @@ export default function UnifiedPlannerScreen() {
     setOnboardingDone(true);
   };
 
+  const openSaveDialog = () => {
+    if (!authConfigured) {
+      setSaveError('Sign-in is not configured in this environment.');
+      return;
+    }
+    if (!user) {
+      // Preserve the in-progress plan across the OAuth redirect, then hand
+      // off to Google — see the resume effect above.
+      stashPendingSave({ name: trip?.name ?? 'My LA28 Trip', tripDate: null, tags: [], snapshot: buildSnapshot() });
+      signInWithGoogle();
+      return;
+    }
+    setSaveDialogInitial({ name: trip?.name ?? 'My LA28 Trip', tripDate: null, tags: [] });
+    setSaveError(null);
+    setSaveDialogOpen(true);
+  };
+
+  const handleConfirmSave = async (name: string, tripDate: string | null, tags: string[]) => {
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await api.createItinerary({ name, trip_date: tripDate, tags, saved_plan: buildSnapshot() });
+      setSaveDialogOpen(false);
+    } catch (e: unknown) {
+      setSaveError(e instanceof Error ? e.message : 'Could not save this trip.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const totalMinutes = pairs.reduce((sum, { from, to }) => {
     const key = `${from.id}-${to.id}`;
     const res = routeOptions[key];
@@ -826,8 +897,11 @@ export default function UnifiedPlannerScreen() {
       {/* ── Main floating panel (top-left) ───────────────────────────────── */}
       {!mapError && (
         <div style={PANEL_STYLE}>
-          <View style={styles.panelHeader}>
+          <View style={[styles.panelHeader, styles.panelHeaderRow]}>
             <Text style={styles.panelTitle}>LA28 PLANNER</Text>
+            <Pressable onPress={() => router.push('/itineraries')} accessibilityRole="button" accessibilityLabel="My Itineraries" style={styles.gearBtn}>
+              <Feather name="bookmark" size={16} color={colors.primary} />
+            </Pressable>
           </View>
           <View style={{ marginBottom: spacing.sm }}>
             <PolicyBanner text={GAMES_POLICY} compact />
@@ -906,10 +980,16 @@ export default function UnifiedPlannerScreen() {
                 <Text style={styles.summaryText}>
                   {stops.length} stops{totalMinutes > 0 ? ` · ${formatDuration(totalMinutes * 60)}` : ''}{totalCost > 0 ? ` · ~$${totalCost.toFixed(2)}` : ''}
                 </Text>
-                <Pressable onPress={() => setPrefsOpen((v) => !v)} accessibilityRole="button" style={styles.gearBtn}>
-                  <Feather name="sliders" size={14} color={colors.primary} />
-                </Pressable>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <Pressable onPress={openSaveDialog} accessibilityRole="button" accessibilityLabel="Save this trip" style={styles.gearBtn}>
+                    <Feather name="bookmark" size={14} color={colors.primary} />
+                  </Pressable>
+                  <Pressable onPress={() => setPrefsOpen((v) => !v)} accessibilityRole="button" style={styles.gearBtn}>
+                    <Feather name="sliders" size={14} color={colors.primary} />
+                  </Pressable>
+                </View>
               </View>
+              {saveError && <Text style={styles.legError}>{saveError}</Text>}
               {prefsOpen && (
                 <View style={styles.prefsPanel}>
                   <ModePreferencesChecklist
@@ -1050,6 +1130,24 @@ export default function UnifiedPlannerScreen() {
           <Text style={styles.errorText}>{mapError}</Text>
         </View>
       )}
+
+      <SaveItineraryDialog
+        visible={saveDialogOpen}
+        initialName={saveDialogInitial.name}
+        initialTripDate={saveDialogInitial.tripDate}
+        initialTags={saveDialogInitial.tags}
+        saving={saving}
+        errorText={saveError}
+        onCancel={() => { setSaveDialogOpen(false); setSaveError(null); }}
+        onSave={handleConfirmSave}
+      />
+
+      {hydrating && (
+        <View style={styles.overlay}>
+          <ActivityIndicator color={colors.primary} size="large" />
+          <Text style={styles.stepHint}>Opening your saved trip — refreshing live routes…</Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -1097,6 +1195,7 @@ const styles = StyleSheet.create({
   },
   errorText: { fontFamily: 'Barlow_400Regular', fontSize: 14, color: colors.destructive, textAlign: 'center', lineHeight: 20 },
   panelHeader: { marginBottom: spacing.xs },
+  panelHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   panelTitle: { fontFamily: 'BarlowCondensed_700Bold', fontSize: 20, color: colors.foreground, letterSpacing: 1 },
   errorBanner: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#FEF2F2', borderRadius: radius.sm, padding: spacing.sm, marginBottom: spacing.sm },
   errorBannerText: { fontFamily: 'Barlow_400Regular', fontSize: 12, color: colors.destructive, flex: 1 },

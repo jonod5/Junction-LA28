@@ -65,6 +65,7 @@ function RootLayoutNav() {
                 name="comparison"
                 options={{ presentation: 'modal', title: 'Getting There' }}
               />
+              <Stack.Screen name="itineraries" options={{ title: 'My Itineraries' }} />
             </Stack>
           </ThemeProvider>
         </TripProvider>

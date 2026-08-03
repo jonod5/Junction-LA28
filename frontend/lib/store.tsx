@@ -1,5 +1,15 @@
 import React, { createContext, useCallback, useContext, useState } from 'react';
-import { api, DirectionStep, Leg, RouteMode, RouteOptimizeResult, Stop, Trip } from './api';
+import {
+  api,
+  DirectionStep,
+  Leg,
+  RouteMode,
+  RouteOptimizeResult,
+  SavedLegSnapshot,
+  SavedPlanSnapshot,
+  Stop,
+  Trip,
+} from './api';
 
 /** All non-car modes the route engine can rank (mirrors route_engine.MODE_LABEL). */
 export const ROUTE_MODES: RouteMode[] = ['transit', 'metro_micro', 'bike', 'scooter', 'walk', 'ridehail'];
@@ -32,8 +42,25 @@ interface TripContextValue {
   routeOptionsLoading: Record<string, boolean>;
   routeOptionsError: Record<string, string | null>;
   selectedOptionId: Record<string, string | null>;
-  optimizeLeg: (from: Stop, to: Stop) => Promise<void>;
+  optimizeLeg: (
+    from: Stop,
+    to: Stop,
+    opts?: { preferredOptionId?: string; preferencesOverride?: RouteMode[] | null },
+  ) => Promise<void>;
   selectRouteOption: (fromId: number, toId: number, optionId: string) => void;
+
+  // ── Saved itineraries ────────────────────────────────────────────────────
+  /** True while a saved itinerary is being rehydrated into a fresh trip. */
+  hydrating: boolean;
+  /** Builds the saved_plan snapshot (stops + selected option per leg) from
+   *  the current session — the exact shape /api/itineraries stores. */
+  buildSnapshot: () => SavedPlanSnapshot;
+  /** Replaces the current trip with a brand-new one built from a saved
+   *  snapshot, then re-runs live route optimization for every leg (this is
+   *  a deliberate live refresh, not just replaying the snapshot's numbers —
+   *  see the Phase 3 auto-refresh decision) and restores each leg's
+   *  previous mode-combo selection when the fresh results still offer it. */
+  hydrateFromSnapshot: (snapshot: SavedPlanSnapshot) => Promise<boolean>;
 }
 
 const TripContext = createContext<TripContextValue | null>(null);
@@ -49,6 +76,8 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
   const [routeOptionsLoading, setRouteOptionsLoading] = useState<Record<string, boolean>>({});
   const [routeOptionsError, setRouteOptionsError] = useState<Record<string, string | null>>({});
   const [selectedOptionId, setSelectedOptionId] = useState<Record<string, string | null>>({});
+
+  const [hydrating, setHydrating] = useState(false);
 
   const clearError = useCallback(() => setError(null), []);
 
@@ -147,19 +176,34 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const optimizeLeg = useCallback(
-    async (from: Stop, to: Stop): Promise<void> => {
+    async (
+      from: Stop,
+      to: Stop,
+      opts?: { preferredOptionId?: string; preferencesOverride?: RouteMode[] | null },
+    ): Promise<void> => {
       const key = legKey(from.id, to.id);
+      // preferencesOverride lets a caller bypass the (possibly stale, within
+      // the same tick) `preferences` closure — used when rehydrating a saved
+      // itinerary, where the preferences to use are known synchronously from
+      // the snapshot rather than from context state that hasn't re-rendered yet.
+      const prefsToUse = opts && 'preferencesOverride' in opts ? opts.preferencesOverride : preferences;
       setRouteOptionsLoading((prev) => ({ ...prev, [key]: true }));
       setRouteOptionsError((prev) => ({ ...prev, [key]: null }));
       try {
         const result = await api.optimizeRoutes({
           origin: { lat: from.lat, lng: from.lng },
           destination: { lat: to.lat, lng: to.lng },
-          preferences,
+          preferences: prefsToUse ?? null,
         });
         setRouteOptions((prev) => ({ ...prev, [key]: result }));
-        // Default to the top-ranked (best-scoring) option.
-        setSelectedOptionId((prev) => ({ ...prev, [key]: result.options[0]?.id ?? null }));
+        // Restore a previously-selected mode combo when it's still offered
+        // (e.g. rehydrating a saved itinerary); otherwise default to the
+        // top-ranked (best-scoring) option.
+        const preferredId = opts?.preferredOptionId;
+        const restored = preferredId && result.options.some((o) => o.id === preferredId)
+          ? preferredId
+          : result.options[0]?.id ?? null;
+        setSelectedOptionId((prev) => ({ ...prev, [key]: restored }));
       } catch (e: unknown) {
         setRouteOptionsError((prev) => ({
           ...prev,
@@ -176,6 +220,71 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
     setSelectedOptionId((prev) => ({ ...prev, [legKey(fromId, toId)]: optionId }));
   }, []);
 
+  const buildSnapshot = useCallback((): SavedPlanSnapshot => {
+    const orderedStops = [...(trip?.stops ?? [])].sort((a, b) => a.order_index - b.order_index);
+    const legs: Record<string, SavedLegSnapshot> = {};
+    orderedStops.slice(0, -1).forEach((from, i) => {
+      const to = orderedStops[i + 1];
+      const key = legKey(from.id, to.id);
+      const res = routeOptions[key];
+      const selId = selectedOptionId[key];
+      const opt = res?.options.find((o) => o.id === selId);
+      if (opt) legs[`${i}-${i + 1}`] = { selected_option: opt };
+    });
+    return {
+      stops: orderedStops.map((s) => ({ venue_id: s.venue_id, name: s.name, lat: s.lat, lng: s.lng })),
+      preferences,
+      legs,
+    };
+  }, [trip, routeOptions, selectedOptionId, preferences]);
+
+  const hydrateFromSnapshot = useCallback(
+    async (snapshot: SavedPlanSnapshot): Promise<boolean> => {
+      setHydrating(true);
+      setError(null);
+      try {
+        const newTrip = await api.createTrip('My LA28 Trip');
+        setTrip(newTrip);
+        setRouteOptions({});
+        setSelectedOptionId({});
+        setRouteOptionsError({});
+        setRouteOptionsLoading({});
+        setPreferencesState(snapshot.preferences);
+
+        const createdStops: Stop[] = [];
+        for (const s of snapshot.stops) {
+          const stop = await api.addStop(newTrip.id, {
+            venue_id: s.venue_id ?? undefined,
+            name: s.name,
+            lat: s.lat,
+            lng: s.lng,
+          });
+          createdStops.push(stop);
+        }
+        setTrip((prev) => (prev ? { ...prev, stops: createdStops } : prev));
+
+        // Re-optimize every consecutive pair with live data — a deliberate
+        // choice (not just replaying the snapshot's numbers) so a reopened
+        // itinerary always reflects current prices and transit schedules.
+        // Each leg's previous mode-combo selection is restored when the
+        // fresh results still offer it, else falls back to the new top pick.
+        for (let i = 0; i < createdStops.length - 1; i++) {
+          const from = createdStops[i];
+          const to = createdStops[i + 1];
+          const preferredOptionId = snapshot.legs[`${i}-${i + 1}`]?.selected_option?.id;
+          await optimizeLeg(from, to, { preferredOptionId, preferencesOverride: snapshot.preferences });
+        }
+        return true;
+      } catch (e: unknown) {
+        setError(e instanceof Error ? e.message : 'Could not open this itinerary');
+        return false;
+      } finally {
+        setHydrating(false);
+      }
+    },
+    [optimizeLeg],
+  );
+
   return (
     <TripContext.Provider
       value={{
@@ -184,6 +293,7 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
         preferences, setPreferences,
         routeOptions, routeOptionsLoading, routeOptionsError, selectedOptionId,
         optimizeLeg, selectRouteOption,
+        hydrating, buildSnapshot, hydrateFromSnapshot,
       }}
     >
       {children}
