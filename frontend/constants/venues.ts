@@ -51,8 +51,8 @@ export const VENUES: VenueStub[] = [
     name: 'Peacock Theater',
     sport_use: 'Gymnastics',
     address: '777 Chick Hearn Ct, Los Angeles, CA 90015',
-    lat: 34.0448,
-    lng: -118.2666,
+    lat: 34.0444,
+    lng: -118.2675,
   },
   {
     kind: 'venue',

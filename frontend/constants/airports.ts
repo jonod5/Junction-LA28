@@ -29,8 +29,8 @@ export const AIRPORTS: AirportStub[] = [
     code: 'LGB',
     name: 'Long Beach Airport',
     terminal_info: 'Terminal A',
-    lat: 33.8117,
-    lng: -118.1516,
+    lat: 33.8179,
+    lng: -118.1444,
   },
   {
     kind: 'airport',

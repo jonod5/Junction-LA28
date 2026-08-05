@@ -1,6 +1,6 @@
 import { Feather } from '@expo/vector-icons';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { colors, radius, shadow, spacing } from '@/constants/theme';
 
@@ -63,14 +63,27 @@ export function SaveItineraryDialog({
         />
 
         <Text style={styles.label}>Trip date (optional)</Text>
-        <TextInput
-          value={tripDate}
-          onChangeText={setTripDate}
-          placeholder="YYYY-MM-DD"
-          placeholderTextColor={colors.mutedFg}
-          style={styles.input}
-          accessibilityLabel="Trip date"
-        />
+        {Platform.OS === 'web' ? (
+          // Native browser date picker — a real calendar dropdown, and
+          // e.target.value is already YYYY-MM-DD so no format validation
+          // is needed on this path.
+          <input
+            type="date"
+            value={tripDate}
+            onChange={(e) => setTripDate(e.target.value)}
+            aria-label="Trip date"
+            style={webDateInputStyle}
+          />
+        ) : (
+          <TextInput
+            value={tripDate}
+            onChangeText={setTripDate}
+            placeholder="YYYY-MM-DD"
+            placeholderTextColor={colors.mutedFg}
+            style={styles.input}
+            accessibilityLabel="Trip date"
+          />
+        )}
         {!dateValid && <Text style={styles.errorText}>Use the format YYYY-MM-DD.</Text>}
 
         <Text style={styles.label}>Tags (optional, comma-separated)</Text>
@@ -109,6 +122,15 @@ export function SaveItineraryDialog({
     </View>
   );
 }
+
+// Matches styles.input below but as a plain CSS object — react-native-web's
+// StyleSheet output isn't usable on a raw <input>.
+const webDateInputStyle: React.CSSProperties = {
+  fontFamily: 'Barlow_400Regular', fontSize: 14, color: colors.foreground,
+  backgroundColor: colors.mutedBg, borderRadius: radius.sm, border: 'none',
+  paddingLeft: spacing.sm, paddingRight: spacing.sm, paddingTop: 8, paddingBottom: 8,
+  minHeight: 40, width: '100%', boxSizing: 'border-box',
+};
 
 const styles = StyleSheet.create({
   backdrop: {
