@@ -24,7 +24,7 @@ import { api, type RouteMode } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 
 export default function SettingsScreen() {
-  const { user, loading: authLoading, signOut } = useAuth();
+  const { user, account, loading: authLoading, signOut, refreshAccount } = useAuth();
   const router = useRouter();
 
   const [editingName, setEditingName] = useState(false);
@@ -33,7 +33,6 @@ export default function SettingsScreen() {
   const [nameError, setNameError] = useState<string | null>(null);
 
   const [defaultModes, setDefaultModes] = useState<RouteMode[]>([]);
-  const [prefsLoading, setPrefsLoading] = useState(false);
   const [prefsSaving, setPrefsSaving] = useState(false);
   const [prefsError, setPrefsError] = useState<string | null>(null);
 
@@ -42,20 +41,24 @@ export default function SettingsScreen() {
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  const displayName = (user?.user_metadata?.full_name as string | undefined) ?? user?.email ?? '';
+  // account.display_name is the editable, authoritative name (backend
+  // mirror) — Google's user_metadata.full_name is read-only from this app,
+  // so it's only used as a fallback before account has loaded.
+  const displayName = account?.display_name
+    ?? (user?.user_metadata?.full_name as string | undefined)
+    ?? user?.email
+    ?? '';
   const avatarUrl = user?.user_metadata?.avatar_url as string | undefined;
+  const prefsLoading = !account;
 
+  // Seeds from the shared account cache — not a local fetch — so this page
+  // reflects a change made elsewhere (or a moment ago, on this same page)
+  // without going stale.
   useEffect(() => {
-    if (!user) return;
-    setNameDraft(displayName);
-    setPrefsLoading(true);
-    setPrefsError(null);
-    api.getAccount()
-      .then((acct) => setDefaultModes(acct.preferences?.default_modes ?? []))
-      .catch((e: unknown) => setPrefsError(e instanceof Error ? e.message : 'Could not load preferences'))
-      .finally(() => setPrefsLoading(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id]);
+    if (!account) return;
+    setNameDraft(account.display_name ?? '');
+    setDefaultModes(account.preferences?.default_modes ?? []);
+  }, [account]);
 
   const handleSaveName = async () => {
     const trimmed = nameDraft.trim();
@@ -64,6 +67,7 @@ export default function SettingsScreen() {
     setNameError(null);
     try {
       await api.updateAccount({ display_name: trimmed });
+      await refreshAccount();
       setEditingName(false);
     } catch (e: unknown) {
       setNameError(e instanceof Error ? e.message : 'Could not save name');
@@ -79,6 +83,7 @@ export default function SettingsScreen() {
     setPrefsError(null);
     try {
       await api.updateAccount({ default_modes: modes });
+      await refreshAccount();
     } catch (e: unknown) {
       setDefaultModes(previous); // rollback on failure
       setPrefsError(e instanceof Error ? e.message : 'Could not save preferences');
@@ -221,7 +226,6 @@ export default function SettingsScreen() {
 
       {/* ── Danger zone ─────────────────────────────────────────────────── */}
       <View style={styles.section}>
-        <Text style={[styles.sectionTitle, { color: colors.destructive }]}>Danger zone</Text>
         {!deleteOpen ? (
           <Pressable onPress={() => setDeleteOpen(true)} accessibilityRole="button" style={styles.dangerBtn}>
             <Feather name="trash-2" size={14} color={colors.destructive} />

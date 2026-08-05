@@ -311,7 +311,7 @@ export default function UnifiedPlannerScreen() {
     optimizeLeg, selectRouteOption,
     hydrating, buildSnapshot, hydrateFromSnapshot,
   } = useTrip();
-  const { user, loading: authLoading, isConfigured: authConfigured, signInWithGoogle } = useAuth();
+  const { user, account, loading: authLoading, isConfigured: authConfigured, signInWithGoogle } = useAuth();
   const router = useRouter();
 
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -405,16 +405,14 @@ export default function UnifiedPlannerScreen() {
   // Pre-fill the onboarding mode step from the signed-in user's saved
   // default — only while the wizard hasn't been reached/completed yet, so
   // this never clobbers a selection the traveler already made this session.
+  // Reads the shared account cache (not its own fetch) so a default saved a
+  // moment ago in Settings — same session, same AuthProvider — is picked up
+  // here too, not just after a fresh sign-in.
   useEffect(() => {
-    if (!user || onboardingDone) return;
-    api.getAccount()
-      .then((acct) => {
-        const modes = acct.preferences?.default_modes;
-        if (modes && modes.length > 0) setDraftPrefs(modes);
-      })
-      .catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
+    if (!account || onboardingDone) return;
+    const modes = account.preferences?.default_modes;
+    if (modes && modes.length > 0) setDraftPrefs(modes);
+  }, [account, onboardingDone]);
 
   const stops = [...(trip?.stops ?? [])].sort((a, b) => a.order_index - b.order_index);
   const addedNames = stops.map((s) => s.name);

@@ -20,7 +20,7 @@ function initialsFrom(name: string | undefined, email: string | undefined): stri
 }
 
 export function AccountMenu() {
-  const { user, loading, isConfigured, signInWithGoogle, signOut } = useAuth();
+  const { user, account, loading, isConfigured, signInWithGoogle, signOut } = useAuth();
   const router = useRouter();
   const [open, setOpen] = useState(false);
 
@@ -44,7 +44,13 @@ export function AccountMenu() {
     );
   }
 
-  const displayName = (user.user_metadata?.full_name as string | undefined) ?? user.email ?? '';
+  // account.display_name is the editable, authoritative name (backend
+  // mirror); Google's user_metadata.full_name is only a fallback for the
+  // brief window before account has loaded.
+  const displayName = account?.display_name
+    ?? (user.user_metadata?.full_name as string | undefined)
+    ?? user.email
+    ?? '';
   const avatarUrl = user.user_metadata?.avatar_url as string | undefined;
   const initials = initialsFrom(displayName, user.email);
 
