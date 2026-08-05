@@ -12,8 +12,6 @@ import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { colors, radius, shadow, spacing } from '@/constants/theme';
 import { useAuth } from '@/lib/auth';
 
-import { SettingsModal } from './SettingsModal';
-
 function initialsFrom(name: string | undefined, email: string | undefined): string {
   const source = (name || email || '?').trim();
   const parts = source.split(/\s+/).filter(Boolean);
@@ -25,7 +23,6 @@ export function AccountMenu() {
   const { user, loading, isConfigured, signInWithGoogle, signOut } = useAuth();
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
 
   // No Supabase project configured — there's nothing this menu can do, so
   // stay out of the way entirely rather than showing a dead "Sign in" button.
@@ -95,7 +92,7 @@ export function AccountMenu() {
               <Text style={styles.menuItemText}>My Itineraries</Text>
             </Pressable>
             <Pressable
-              onPress={() => { setOpen(false); setSettingsOpen(true); }}
+              onPress={() => { setOpen(false); router.push('/settings'); }}
               accessibilityRole="button"
               style={styles.menuItem}
             >
@@ -114,8 +111,6 @@ export function AccountMenu() {
           </View>
         </>
       )}
-
-      <SettingsModal visible={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </View>
   );
 }

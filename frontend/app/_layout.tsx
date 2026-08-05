@@ -67,6 +67,7 @@ function RootLayoutNav() {
                 options={{ presentation: 'modal', title: 'Getting There' }}
               />
               <Stack.Screen name="itineraries" options={{ title: 'My Itineraries' }} />
+              <Stack.Screen name="settings" options={{ title: 'Settings' }} />
             </Stack>
             <AccountMenu />
           </ThemeProvider>
