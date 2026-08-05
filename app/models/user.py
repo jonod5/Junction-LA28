@@ -12,16 +12,22 @@ Design choices:
   through the wrong path. A plain string sidesteps it entirely and works
   identically on both dialects.
 - Supabase owns identity (password, OAuth, session) — this table only mirrors
-  the fields our app actually reads (email, display name) so itinerary
-  queries never need to call out to Supabase per request.
+  the fields our app actually reads (email, display name, avatar) so
+  itinerary/account queries never need to call out to Supabase per request.
 - Row is get-or-created on first authenticated request (see app.auth), not
   via a dedicated signup endpoint — there's nothing else for a signup step
   to do, since Supabase already created the identity.
+- preferences is a generic JSON column (not postgresql.JSONB) — same
+  portability reasoning as Itinerary.saved_plan: works identically on
+  Postgres and the SQLite-backed test suite. Starts with just
+  default_modes (the planner's onboarding mode checklist), but any future
+  preference lives here without another migration.
 """
 
 from datetime import datetime
+from typing import Any
 
-from sqlalchemy import DateTime, String, func
+from sqlalchemy import JSON, DateTime, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -33,6 +39,8 @@ class User(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     email: Mapped[str] = mapped_column(String(320), nullable=False)
     display_name: Mapped[str | None] = mapped_column(String(200))
+    avatar_url: Mapped[str | None] = mapped_column(String(500))
+    preferences: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )

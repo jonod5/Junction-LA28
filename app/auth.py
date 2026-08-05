@@ -104,15 +104,21 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
     if not uid or not email:
         raise HTTPException(status_code=401, detail="Token missing required claims")
 
+    user_metadata = claims.get("user_metadata") or {}
+    avatar_url = user_metadata.get("avatar_url")
+
     user = db.get(User, uid)
     if user is None:
-        display_name = (claims.get("user_metadata") or {}).get("full_name")
-        user = User(id=uid, email=email, display_name=display_name)
+        display_name = user_metadata.get("full_name")
+        user = User(id=uid, email=email, display_name=display_name, avatar_url=avatar_url)
         db.add(user)
         db.commit()
         db.refresh(user)
-    elif user.email != email:
-        # Email can change (re-confirmed via Supabase) — keep the mirror current.
+    elif user.email != email or user.avatar_url != avatar_url:
+        # Email and Google avatar can both change (re-confirmed via Supabase
+        # or a new profile photo) — keep the mirror current on every request
+        # rather than only at signup.
         user.email = email
+        user.avatar_url = avatar_url
         db.commit()
     return user

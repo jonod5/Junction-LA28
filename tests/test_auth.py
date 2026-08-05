@@ -93,6 +93,25 @@ def test_hs256_updates_email_on_change(db_session, monkeypatch):
     assert user.email == "new@example.com"
 
 
+def test_hs256_creates_user_with_avatar_url(db_session, monkeypatch):
+    monkeypatch.delenv("SUPABASE_URL", raising=False)
+    monkeypatch.setenv("SUPABASE_JWT_SECRET", HS_SECRET)
+    token = _hs256_token(user_metadata={"full_name": "Rider One", "avatar_url": "https://example.com/a.jpg"})
+    user = auth.get_current_user(_request(token), db_session)
+    assert user.display_name == "Rider One"
+    assert user.avatar_url == "https://example.com/a.jpg"
+
+
+def test_hs256_updates_avatar_url_on_change(db_session, monkeypatch):
+    db_session.add(User(id=SUB, email=EMAIL, avatar_url="https://example.com/old.jpg"))
+    db_session.commit()
+    monkeypatch.delenv("SUPABASE_URL", raising=False)
+    monkeypatch.setenv("SUPABASE_JWT_SECRET", HS_SECRET)
+    token = _hs256_token(user_metadata={"avatar_url": "https://example.com/new.jpg"})
+    user = auth.get_current_user(_request(token), db_session)
+    assert user.avatar_url == "https://example.com/new.jpg"
+
+
 def test_hs256_wrong_secret_raises_401(db_session, monkeypatch):
     monkeypatch.delenv("SUPABASE_URL", raising=False)
     monkeypatch.setenv("SUPABASE_JWT_SECRET", HS_SECRET)
