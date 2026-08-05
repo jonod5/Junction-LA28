@@ -16,6 +16,7 @@ import { useEffect } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
 
+import { AccountMenu } from '@/components/AccountMenu';
 import { useColorScheme } from '@/components/useColorScheme';
 import { AuthProvider } from '@/lib/auth';
 import { TripProvider } from '@/lib/store';
@@ -67,6 +68,7 @@ function RootLayoutNav() {
               />
               <Stack.Screen name="itineraries" options={{ title: 'My Itineraries' }} />
             </Stack>
+            <AccountMenu />
           </ThemeProvider>
         </TripProvider>
       </AuthProvider>

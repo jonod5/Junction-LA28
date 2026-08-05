@@ -148,8 +148,9 @@ export function VenueDetailPanel({ venue, loading, error, liveCount, liveLoading
 }
 
 const PANEL_CSS: React.CSSProperties = {
-  position: 'absolute', top: 12, right: 12, width: 380,
-  maxHeight: 'calc(100% - 24px)', overflowY: 'auto',
+  // top offset leaves room for the global account avatar docked at top:12,right:12.
+  position: 'absolute', top: 64, right: 12, width: 380,
+  maxHeight: 'calc(100% - 76px)', overflowY: 'auto',
   background: 'rgba(255,255,255,0.97)', backdropFilter: 'blur(6px)',
   borderRadius: 14, padding: 16, boxShadow: '0 4px 20px rgba(0,0,0,0.18)', zIndex: 11,
   display: 'flex', flexDirection: 'column', gap: 6,
