@@ -322,6 +322,26 @@ export interface ItineraryUpdateBody {
   tags?: string[];
 }
 
+// ── Account ──────────────────────────────────────────────────────────────────
+
+export interface AccountPreferences {
+  default_modes?: RouteMode[];
+  [key: string]: unknown;
+}
+
+export interface Account {
+  id: string;
+  email: string;
+  display_name: string | null;
+  avatar_url: string | null;
+  preferences: AccountPreferences;
+}
+
+export interface AccountUpdateBody {
+  display_name?: string;
+  default_modes?: RouteMode[];
+}
+
 // ── API ───────────────────────────────────────────────────────────────────────
 
 export const api = {
@@ -395,4 +415,11 @@ export const api = {
     request<Itinerary>(`/api/itineraries/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
 
   deleteItinerary: (id: number) => request<void>(`/api/itineraries/${id}`, { method: 'DELETE' }),
+
+  getAccount: () => request<Account>('/api/account'),
+
+  updateAccount: (body: AccountUpdateBody) =>
+    request<Account>('/api/account', { method: 'PATCH', body: JSON.stringify(body) }),
+
+  deleteAccount: () => request<void>('/api/account', { method: 'DELETE' }),
 };

@@ -402,6 +402,20 @@ export default function UnifiedPlannerScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, user]);
 
+  // Pre-fill the onboarding mode step from the signed-in user's saved
+  // default — only while the wizard hasn't been reached/completed yet, so
+  // this never clobbers a selection the traveler already made this session.
+  useEffect(() => {
+    if (!user || onboardingDone) return;
+    api.getAccount()
+      .then((acct) => {
+        const modes = acct.preferences?.default_modes;
+        if (modes && modes.length > 0) setDraftPrefs(modes);
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
+
   const stops = [...(trip?.stops ?? [])].sort((a, b) => a.order_index - b.order_index);
   const addedNames = stops.map((s) => s.name);
   const pairs = stops.slice(0, -1).map((from, i) => ({ from, to: stops[i + 1] }));
