@@ -5,16 +5,18 @@
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { colors, radius, shadow, spacing } from '@/constants/theme';
 import { useAuth } from '@/lib/auth';
 import { api, type Itinerary } from '@/lib/api';
+import i18next from '@/lib/i18n';
 import { useTrip } from '@/lib/store';
 
-function formatDate(d: string | null): string {
-  if (!d) return 'No date set';
-  return new Date(`${d}T00:00:00`).toLocaleDateString(undefined, {
+function formatDate(d: string | null, t: (key: string) => string): string {
+  if (!d) return t('itineraries.noDate');
+  return new Date(`${d}T00:00:00`).toLocaleDateString(i18next.language, {
     month: 'short', day: 'numeric', year: 'numeric',
   });
 }
@@ -23,6 +25,7 @@ export default function ItinerariesScreen() {
   const { user, loading: authLoading, isConfigured, signInWithGoogle } = useAuth();
   const { hydrateFromSnapshot } = useTrip();
   const router = useRouter();
+  const { t } = useTranslation();
 
   const [upcoming, setUpcoming] = useState<Itinerary[]>([]);
   const [past, setPast] = useState<Itinerary[]>([]);
@@ -43,11 +46,11 @@ export default function ItinerariesScreen() {
       setUpcoming(up.items);
       setPast(pa.items);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Could not load your itineraries.');
+      setError(e instanceof Error ? e.message : t('itineraries.loadFailed'));
     } finally {
       setLoading(false);
     }
-  }, [user, tagFilter]);
+  }, [user, tagFilter, t]);
 
   useEffect(() => {
     load();
@@ -55,7 +58,7 @@ export default function ItinerariesScreen() {
 
   const allTags = useMemo(() => {
     const s = new Set<string>();
-    [...upcoming, ...past].forEach((it) => it.tags.forEach((t) => s.add(t)));
+    [...upcoming, ...past].forEach((it) => it.tags.forEach((tag) => s.add(tag)));
     return [...s].sort();
   }, [upcoming, past]);
 
@@ -77,7 +80,7 @@ export default function ItinerariesScreen() {
   };
 
   const rename = async (it: Itinerary) => {
-    const next = window.prompt('Rename this trip', it.name);
+    const next = window.prompt(t('itineraries.prompts.renameTitle'), it.name);
     if (!next || !next.trim() || next.trim() === it.name) return;
     setBusyId(it.id);
     try {
@@ -89,11 +92,11 @@ export default function ItinerariesScreen() {
   };
 
   const editTags = async (it: Itinerary) => {
-    const next = window.prompt('Tags (comma-separated)', it.tags.join(', '));
+    const next = window.prompt(t('itineraries.prompts.tagsTitle'), it.tags.join(', '));
     if (next === null) return;
     setBusyId(it.id);
     try {
-      await api.updateItinerary(it.id, { tags: next.split(',').map((t) => t.trim()).filter(Boolean) });
+      await api.updateItinerary(it.id, { tags: next.split(',').map((tag) => tag.trim()).filter(Boolean) });
       await load();
     } finally {
       setBusyId(null);
@@ -101,7 +104,7 @@ export default function ItinerariesScreen() {
   };
 
   const remove = async (it: Itinerary) => {
-    if (!window.confirm(`Delete "${it.name}"? This can't be undone.`)) return;
+    if (!window.confirm(t('itineraries.prompts.deleteConfirm', { name: it.name }))) return;
     setBusyId(it.id);
     try {
       await api.deleteItinerary(it.id);
@@ -114,7 +117,7 @@ export default function ItinerariesScreen() {
   if (Platform.OS !== 'web') {
     return (
       <View style={styles.centered}>
-        <Text style={styles.hint}>My Itineraries is available on the web app for now.</Text>
+        <Text style={styles.hint}>{t('itineraries.nativeUnavailable')}</Text>
       </View>
     );
   }
@@ -131,14 +134,14 @@ export default function ItinerariesScreen() {
     return (
       <View style={styles.centered}>
         <Feather name="bookmark" size={32} color={colors.mutedFg} />
-        <Text style={styles.title}>Sign in to see your saved trips</Text>
-        <Text style={styles.hint}>Anyone can plan a trip — signing in just lets you save and revisit them later.</Text>
+        <Text style={styles.title}>{t('itineraries.signInPrompt.title')}</Text>
+        <Text style={styles.hint}>{t('itineraries.signInPrompt.hint')}</Text>
         {isConfigured ? (
           <Pressable onPress={() => signInWithGoogle()} accessibilityRole="button" style={styles.primaryBtn}>
-            <Text style={styles.primaryBtnText}>Sign in with Google</Text>
+            <Text style={styles.primaryBtnText}>{t('common.signInWithGoogle')}</Text>
           </Pressable>
         ) : (
-          <Text style={styles.hint}>Sign-in is not configured in this environment.</Text>
+          <Text style={styles.hint}>{t('itineraries.signInPrompt.notConfigured')}</Text>
         )}
       </View>
     );
@@ -153,11 +156,11 @@ export default function ItinerariesScreen() {
       {allTags.length > 0 && (
         <View style={styles.tagRow}>
           <Pressable onPress={() => setTagFilter(null)} style={[styles.tagChip, !tagFilter && styles.tagChipActive]}>
-            <Text style={[styles.tagChipText, !tagFilter && styles.tagChipTextActive]}>All</Text>
+            <Text style={[styles.tagChipText, !tagFilter && styles.tagChipTextActive]}>{t('itineraries.allTag')}</Text>
           </Pressable>
-          {allTags.map((t) => (
-            <Pressable key={t} onPress={() => setTagFilter(t)} style={[styles.tagChip, tagFilter === t && styles.tagChipActive]}>
-              <Text style={[styles.tagChipText, tagFilter === t && styles.tagChipTextActive]}>{t}</Text>
+          {allTags.map((tag) => (
+            <Pressable key={tag} onPress={() => setTagFilter(tag)} style={[styles.tagChip, tagFilter === tag && styles.tagChipActive]}>
+              <Text style={[styles.tagChipText, tagFilter === tag && styles.tagChipTextActive]}>{tag}</Text>
             </Pressable>
           ))}
         </View>
@@ -168,14 +171,14 @@ export default function ItinerariesScreen() {
       {isEmpty && (
         <View style={styles.centered}>
           <Feather name="map" size={32} color={colors.mutedFg} />
-          <Text style={styles.title}>No saved trips yet</Text>
-          <Text style={styles.hint}>Build a trip in the planner, then tap the bookmark icon to save it here.</Text>
+          <Text style={styles.title}>{t('itineraries.empty.title')}</Text>
+          <Text style={styles.hint}>{t('itineraries.empty.hint')}</Text>
         </View>
       )}
 
       {upcoming.length > 0 && (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Upcoming</Text>
+          <Text style={styles.sectionTitle}>{t('itineraries.upcoming')}</Text>
           {upcoming.map((it) => (
             <ItineraryCard
               key={it.id}
@@ -193,7 +196,7 @@ export default function ItinerariesScreen() {
 
       {past.length > 0 && (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Past</Text>
+          <Text style={styles.sectionTitle}>{t('itineraries.past')}</Text>
           {past.map((it) => (
             <ItineraryCard
               key={it.id}
@@ -221,6 +224,7 @@ function ItineraryCard({ itinerary, busy, onOpen, onPin, onRename, onEditTags, o
   onEditTags: () => void;
   onDelete: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <View style={styles.card}>
       <Pressable
@@ -228,7 +232,7 @@ function ItineraryCard({ itinerary, busy, onOpen, onPin, onRename, onEditTags, o
         disabled={busy}
         style={styles.cardBody}
         accessibilityRole="button"
-        accessibilityLabel={`Open ${itinerary.name}`}
+        accessibilityLabel={t('itineraries.actions.open', { name: itinerary.name })}
       >
         <View style={{ flex: 1 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -236,7 +240,7 @@ function ItineraryCard({ itinerary, busy, onOpen, onPin, onRename, onEditTags, o
             <Text style={styles.cardTitle} numberOfLines={1}>{itinerary.name}</Text>
           </View>
           <Text style={styles.cardMeta}>
-            {formatDate(itinerary.trip_date)} · {itinerary.saved_plan.stops.length} stops
+            {formatDate(itinerary.trip_date, t)} · {t('itineraries.stops', { count: itinerary.saved_plan.stops.length })}
           </Text>
           {itinerary.tags.length > 0 && (
             <Text style={styles.cardTags} numberOfLines={1}>{itinerary.tags.join(' · ')}</Text>
@@ -245,16 +249,16 @@ function ItineraryCard({ itinerary, busy, onOpen, onPin, onRename, onEditTags, o
         {busy && <ActivityIndicator color={colors.primary} size="small" />}
       </Pressable>
       <View style={styles.cardActions}>
-        <Pressable onPress={onPin} disabled={busy} hitSlop={8} accessibilityLabel={itinerary.is_pinned ? 'Unpin' : 'Pin'}>
+        <Pressable onPress={onPin} disabled={busy} hitSlop={8} accessibilityLabel={itinerary.is_pinned ? t('itineraries.actions.unpin') : t('itineraries.actions.pin')}>
           <Feather name="star" size={15} color={itinerary.is_pinned ? colors.gold : colors.mutedFg} />
         </Pressable>
-        <Pressable onPress={onRename} disabled={busy} hitSlop={8} accessibilityLabel="Rename">
+        <Pressable onPress={onRename} disabled={busy} hitSlop={8} accessibilityLabel={t('itineraries.actions.rename')}>
           <Feather name="edit-2" size={15} color={colors.mutedFg} />
         </Pressable>
-        <Pressable onPress={onEditTags} disabled={busy} hitSlop={8} accessibilityLabel="Edit tags">
+        <Pressable onPress={onEditTags} disabled={busy} hitSlop={8} accessibilityLabel={t('itineraries.actions.editTags')}>
           <Feather name="tag" size={15} color={colors.mutedFg} />
         </Pressable>
-        <Pressable onPress={onDelete} disabled={busy} hitSlop={8} accessibilityLabel="Delete">
+        <Pressable onPress={onDelete} disabled={busy} hitSlop={8} accessibilityLabel={t('itineraries.actions.delete')}>
           <Feather name="trash-2" size={15} color={colors.destructive} />
         </Pressable>
       </View>

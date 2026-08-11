@@ -21,7 +21,7 @@ export default function TabLayout() {
         headerShown: useClientOnlyValue(false, true),
       }}
     >
-      <Tabs.Screen name="index" options={{ title: 'Junction.io' }} />
+      <Tabs.Screen name="index" options={{ title: 'JUNCTION' }} />
       {/* Native-only fallback screens (web replaces both with index.web.tsx). */}
       <Tabs.Screen name="map" options={{ href: null }} />
       <Tabs.Screen name="routes" options={{ href: null }} />

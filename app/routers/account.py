@@ -3,7 +3,7 @@ Account management — /api/account
 
 Endpoints:
   GET    /api/account    current user's profile + preferences
-  PATCH  /api/account    update display_name and/or default_modes
+  PATCH  /api/account    update display_name, default_modes, and/or language
   DELETE /api/account    permanently delete the account
 
 Design choices:
@@ -57,6 +57,8 @@ def update_account(
         user.display_name = updates["display_name"]
     if "default_modes" in updates:
         user.preferences = {**(user.preferences or {}), "default_modes": updates["default_modes"]}
+    if "language" in updates:
+        user.preferences = {**(user.preferences or {}), "language": updates["language"]}
     db.commit()
     db.refresh(user)
     return user

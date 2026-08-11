@@ -326,6 +326,8 @@ export interface ItineraryUpdateBody {
 
 export interface AccountPreferences {
   default_modes?: RouteMode[];
+  /** One of lib/i18n.ts's SupportedLanguage codes ('en' | 'es' | 'fr' | 'zh-Hans'). */
+  language?: string;
   [key: string]: unknown;
 }
 
@@ -340,6 +342,7 @@ export interface Account {
 export interface AccountUpdateBody {
   display_name?: string;
   default_modes?: RouteMode[];
+  language?: string;
 }
 
 // ── API ───────────────────────────────────────────────────────────────────────

@@ -12,6 +12,7 @@
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
   Pressable,
@@ -46,13 +47,15 @@ import {
   type VenueDetail,
 } from '@/lib/api';
 import { linksForModes, type Place } from '@/lib/deeplinks';
+// Module-level i18next instance — the map-marker/info-window builder
+// functions below are plain functions (not components), so they use
+// i18next.t() directly rather than the useTranslation() hook.
+import i18next from '@/lib/i18n';
 import { clearPendingSave, readPendingSave, stashPendingSave } from '@/lib/pendingSave';
 import { decodePolyline, formatDistance, formatDuration } from '@/lib/polyline';
 import { ROUTE_MODES, useTrip } from '@/lib/store';
 
 const MAPS_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_KEY ?? '';
-const GAMES_POLICY =
-  'No spectator parking at venues during LA28 Games. Attendees must use transit, sanctioned park-and-ride, or active transport.';
 
 declare global {
   interface Window {
@@ -68,7 +71,7 @@ function loadGoogleMaps(): Promise<void> {
     const s = document.createElement('script');
     s.src = `https://maps.googleapis.com/maps/api/js?key=${MAPS_KEY}&callback=__gmCb`;
     s.async = true;
-    s.onerror = () => reject(new Error('Failed to load Google Maps'));
+    s.onerror = () => reject(new Error(i18next.t('planner.mapError.loadFailed')));
     document.head.appendChild(s);
   });
 }
@@ -97,10 +100,9 @@ const MODE_COLORS: Record<string, string> = {
   ridehail: colors.accent,
   metro_micro: '#B45309',
 };
-const MODE_LABELS: Record<string, string> = {
-  walk: 'Walk', bike: 'Bike', scooter: 'Scooter', transit: 'Transit',
-  metro_micro: 'Metro Micro', ridehail: 'Rideshare',
-};
+function modeShortLabel(mode: string): string {
+  return i18next.t(`modes.shortLabel.${mode}`, { defaultValue: mode });
+}
 
 interface RenderStep extends DirectionStep {
   engineMode: string;
@@ -183,33 +185,35 @@ function makeLiveIcon(item: MicromobilityItem): google.maps.Icon {
     anchor: new window.google.maps.Point(r, r),
   };
 }
-const LIVE_TYPE_LABEL: Record<MicromobilityItem['vehicle_type'], string> = {
-  scooter: 'Scooter', bike: 'Bike', ebike: 'E-bike',
-};
+function liveVehicleTypeLabel(vehicleType: MicromobilityItem['vehicle_type']): string {
+  return i18next.t(`planner.map.vehicleType.${vehicleType}`);
+}
 function liveInfoHtml(item: MicromobilityItem): string {
   const fill = LIVE_COLORS[item.vehicle_type] ?? colors.secondary;
   const providerName = item.provider.split('-').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
   const count = liveItemCount(item);
   return [
     `<div style="font-family:system-ui,sans-serif;max-width:220px;line-height:1.5;padding:2px 0">`,
-    `<div style="display:inline-block;background:${fill};color:#fff;padding:2px 8px;border-radius:8px;font-size:10px;font-weight:700;margin-bottom:5px">LIVE · ${LIVE_TYPE_LABEL[item.vehicle_type]}</div>`,
+    `<div style="display:inline-block;background:${fill};color:#fff;padding:2px 8px;border-radius:8px;font-size:10px;font-weight:700;margin-bottom:5px">${i18next.t('planner.map.liveBadge', { type: liveVehicleTypeLabel(item.vehicle_type) })}</div>`,
     `<div style="font-size:12px;font-weight:700;color:#1F2937">${item.name ?? providerName}</div>`,
     `<div style="font-size:11px;color:#4B5563">${providerName}</div>`,
     item.kind === 'station' && count != null
-      ? `<div style="font-size:11px;color:#6B7280;margin-top:2px">${count} available${item.num_docks_available != null ? ` · ${item.num_docks_available} docks` : ''}</div>`
-      : `<div style="font-size:11px;color:#6B7280;margin-top:2px">Available now</div>`,
-    `<div style="font-size:10px;color:#9CA3AF;margin-top:3px">${Math.round(item.distance_m)} m away · GBFS</div>`,
+      ? `<div style="font-size:11px;color:#6B7280;margin-top:2px">${i18next.t('planner.map.availableCount', { count })}${item.num_docks_available != null ? ` · ${i18next.t('planner.map.docksCount', { count: item.num_docks_available })}` : ''}</div>`
+      : `<div style="font-size:11px;color:#6B7280;margin-top:2px">${i18next.t('planner.map.availableNow')}</div>`,
+    `<div style="font-size:10px;color:#9CA3AF;margin-top:3px">${i18next.t('planner.map.distanceAway', { distance: Math.round(item.distance_m) })} · GBFS</div>`,
     `</div>`,
   ].join('');
 }
 
+// Proper nouns — deliberately not translated (see locales/README.md).
 const VENUE_NAME: Record<number, string> = {
   1: 'LA Memorial Coliseum', 2: 'SoFi Stadium', 3: 'Dodger Stadium',
   4: 'Crypto.com Arena', 5: 'Peacock Theater', 6: 'Rose Bowl',
 };
 
 function transitInfoHtml(point: VenueTransitPoint): string {
-  const { fill, displayName } = TRANSIT_LAYER_CONFIG[point.type];
+  const { fill } = TRANSIT_LAYER_CONFIG[point.type];
+  const displayName = i18next.t(`transitLegend.${point.type}`);
   const venueLabel = point.venueIds.map((id) => VENUE_NAME[id]).filter(Boolean).join(' · ');
   return [
     `<div style="font-family:system-ui,sans-serif;max-width:230px;line-height:1.5;padding:2px 0">`,
@@ -218,8 +222,8 @@ function transitInfoHtml(point: VenueTransitPoint): string {
     point.lines?.length ? `<div style="font-size:11px;color:#4B5563">${point.lines.join(' · ')}</div>` : '',
     point.providers?.length ? `<div style="font-size:11px;color:#4B5563">${point.providers.join(' · ')}</div>` : '',
     point.walkMin != null
-      ? `<div style="font-size:11px;color:#6B7280;margin-top:2px">🚶 ${point.walkMin} min · ${venueLabel}</div>`
-      : venueLabel ? `<div style="font-size:11px;color:#6B7280;margin-top:2px">Near: ${venueLabel}</div>` : '',
+      ? `<div style="font-size:11px;color:#6B7280;margin-top:2px">🚶 ${i18next.t('planner.map.walkMinLabel', { min: point.walkMin })} · ${venueLabel}</div>`
+      : venueLabel ? `<div style="font-size:11px;color:#6B7280;margin-top:2px">${i18next.t('planner.map.near', { label: venueLabel })}</div>` : '',
     point.note ? `<div style="font-size:11px;color:#9CA3AF;margin-top:3px">${point.note}</div>` : '',
     `</div>`,
   ].join('');
@@ -233,7 +237,7 @@ function hoverHtml(step: RenderStep): string {
     const dur = step.duration_s > 0 ? formatDuration(step.duration_s) : '';
     const meta = [dist, dur].filter(Boolean).join(' · ');
     return `<div style="font-family:system-ui,sans-serif;max-width:220px;line-height:1.5">
-      <div style="font-size:12px;font-weight:600;color:#1F2937">${step.instruction || 'Walk'}</div>
+      <div style="font-size:12px;font-weight:600;color:#1F2937">${step.instruction || i18next.t('common.walk')}</div>
       ${meta ? `<div style="font-size:11px;color:#6B7280;margin-top:2px">${meta}</div>` : ''}
     </div>`;
   }
@@ -241,17 +245,17 @@ function hoverHtml(step: RenderStep): string {
     const color = step.transit_color || colors.secondary;
     return `<div style="font-family:system-ui,sans-serif;max-width:240px;line-height:1.5">
       <div style="display:inline-block;background:${color};color:#fff;padding:2px 9px;border-radius:10px;font-size:11px;font-weight:700;margin-bottom:5px">
-        ${step.transit_line_short ?? step.transit_line ?? 'Transit'}
+        ${step.transit_line_short ?? step.transit_line ?? i18next.t('modes.shortLabel.transit')}
       </div>
       <div style="font-size:12px;font-weight:600;color:#1F2937">${step.transit_line ?? ''}${step.headsign ? ` → ${step.headsign}` : ''}</div>
-      ${step.departure_stop ? `<div style="font-size:11px;color:#555;margin-top:3px">🚉 Board: <b>${step.departure_stop}</b></div>` : ''}
-      ${step.arrival_stop ? `<div style="font-size:11px;color:#555">🚉 Exit: <b>${step.arrival_stop}</b></div>` : ''}
-      ${step.num_stops != null ? `<div style="font-size:11px;color:#9CA3AF;margin-top:2px">${step.num_stops} stop${step.num_stops !== 1 ? 's' : ''} · ${formatDuration(step.duration_s)}</div>` : ''}
+      ${step.departure_stop ? `<div style="font-size:11px;color:#555;margin-top:3px">🚉 ${i18next.t('common.board')}: <b>${step.departure_stop}</b></div>` : ''}
+      ${step.arrival_stop ? `<div style="font-size:11px;color:#555">🚉 ${i18next.t('common.exit')}: <b>${step.arrival_stop}</b></div>` : ''}
+      ${step.num_stops != null ? `<div style="font-size:11px;color:#9CA3AF;margin-top:2px">${i18next.t('common.stop', { count: step.num_stops })} · ${formatDuration(step.duration_s)}</div>` : ''}
     </div>`;
   }
   // Bicycling/driving Directions step, colored by the ENGINE mode that wraps it
   // (bike/scooter/ridehail/metro_micro), not the raw Google travel mode.
-  const label = MODE_LABELS[step.engineMode] ?? step.mode;
+  const label = modeShortLabel(step.engineMode);
   const color = MODE_COLORS[step.engineMode] ?? '#9CA3AF';
   const dist = step.distance_m > 0 ? formatDistance(step.distance_m) : '';
   const dur = step.duration_s > 0 ? formatDuration(step.duration_s) : '';
@@ -263,6 +267,7 @@ function hoverHtml(step: RenderStep): string {
 
 // ── Step row (turn-by-turn, shown when a leg card is expanded) ────────────────
 function StepRow({ step }: { step: RenderStep }) {
+  const { t } = useTranslation();
   if (step.mode === 'transit') {
     const color = step.transit_color ?? colors.secondary;
     const label = step.transit_line_short ?? step.transit_line ?? '';
@@ -277,9 +282,9 @@ function StepRow({ step }: { step: RenderStep }) {
           </div>
           {(step.departure_stop || step.arrival_stop) && (
             <div style={{ fontSize: 11, fontFamily: 'Barlow_400Regular', color: '#6B7280', marginTop: 1 }}>
-              {step.departure_stop ? `Board: ${step.departure_stop}` : ''}
+              {step.departure_stop ? `${t('common.board')}: ${step.departure_stop}` : ''}
               {step.departure_stop && step.arrival_stop ? ' · ' : ''}
-              {step.arrival_stop ? `Exit: ${step.arrival_stop}` : ''}
+              {step.arrival_stop ? `${t('common.exit')}: ${step.arrival_stop}` : ''}
             </div>
           )}
         </div>
@@ -287,7 +292,7 @@ function StepRow({ step }: { step: RenderStep }) {
     );
   }
   const color = step.mode === 'walking' ? colors.primary : (MODE_COLORS[step.engineMode] ?? '#9CA3AF');
-  const label = step.mode === 'walking' ? step.instruction || 'Walk' : (MODE_LABELS[step.engineMode] ?? step.mode);
+  const label = step.mode === 'walking' ? step.instruction || t('common.walk') : modeShortLabel(step.engineMode);
   return (
     <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 8 }}>
       <div style={{ width: 18, height: 18, borderRadius: '50%', background: color, flexShrink: 0, marginTop: 2 }} />
@@ -313,6 +318,7 @@ export default function UnifiedPlannerScreen() {
   } = useTrip();
   const { user, account, loading: authLoading, isConfigured: authConfigured, signInWithGoogle } = useAuth();
   const router = useRouter();
+  const { t } = useTranslation();
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
@@ -352,7 +358,7 @@ export default function UnifiedPlannerScreen() {
   // ── Save itinerary dialog ────────────────────────────────────────────────
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [saveDialogInitial, setSaveDialogInitial] = useState<{ name: string; tripDate: string | null; tags: string[] }>({
-    name: trip?.name ?? 'My LA28 Trip',
+    name: trip?.name ?? t('planner.defaultTripName'),
     tripDate: null,
     tags: [],
   });
@@ -376,7 +382,7 @@ export default function UnifiedPlannerScreen() {
   // (destination → preferences → view trip, no naming step).
   useEffect(() => {
     if (!trip && !loading) {
-      createTrip('My LA28 Trip');
+      createTrip(t('planner.defaultTripName'));
     }
   }, [trip, loading, createTrip]);
 
@@ -459,7 +465,7 @@ export default function UnifiedPlannerScreen() {
   // ── Google Maps init ─────────────────────────────────────────────────────
   useEffect(() => {
     if (!MAPS_KEY) {
-      setMapError('Google Maps API key is not configured. Contact the app administrator.');
+      setMapError(t('planner.mapError.keyMissing'));
       return;
     }
     let cancelled = false;
@@ -630,7 +636,7 @@ export default function UnifiedPlannerScreen() {
         position: { lat: item.lat, lng: item.lng },
         map,
         icon: makeCandidateIcon(item.kind),
-        title: `Add ${item.name}`,
+        title: t('search.addItem', { name: item.name }),
         zIndex: 10,
         optimized: false,
       });
@@ -697,7 +703,7 @@ export default function UnifiedPlannerScreen() {
           }
         }
         setLiveItems(merged);
-        setLiveError(anyOk ? null : 'Live feeds unavailable — showing static zones');
+        setLiveError(anyOk ? null : t('planner.legend.liveUnavailable'));
       })
       .finally(() => { if (!cancelled) setLiveLoading(false); });
     return () => { cancelled = true; };
@@ -750,14 +756,14 @@ export default function UnifiedPlannerScreen() {
     setVenueDetailError(null);
     api.getVenue(openVenue.id)
       .then((v) => { if (!cancelled) setVenueDetail(v); })
-      .catch((e: unknown) => { if (!cancelled) setVenueDetailError(e instanceof Error ? e.message : 'Could not load venue'); })
+      .catch((e: unknown) => { if (!cancelled) setVenueDetailError(e instanceof Error ? e.message : t('venueDetail.loadFailed')); })
       .finally(() => { if (!cancelled) setVenueDetailLoading(false); });
 
     setVenueLiveLoading(true);
     setVenueLiveError(null);
     api.getMicromobility(openVenue.lat, openVenue.lng, 600)
       .then((r) => { if (!cancelled) setVenueLive(r); })
-      .catch(() => { if (!cancelled) setVenueLiveError('Live feed unavailable'); })
+      .catch(() => { if (!cancelled) setVenueLiveError(t('venueDetail.liveFeedUnavailable')); })
       .finally(() => { if (!cancelled) setVenueLiveLoading(false); });
 
     return () => { cancelled = true; };
@@ -831,17 +837,17 @@ export default function UnifiedPlannerScreen() {
 
   const openSaveDialog = () => {
     if (!authConfigured) {
-      setSaveError('Sign-in is not configured in this environment.');
+      setSaveError(t('planner.signInNotConfigured'));
       return;
     }
     if (!user) {
       // Preserve the in-progress plan across the OAuth redirect, then hand
       // off to Google — see the resume effect above.
-      stashPendingSave({ name: trip?.name ?? 'My LA28 Trip', tripDate: null, tags: [], snapshot: buildSnapshot() });
+      stashPendingSave({ name: trip?.name ?? t('planner.defaultTripName'), tripDate: null, tags: [], snapshot: buildSnapshot() });
       signInWithGoogle();
       return;
     }
-    setSaveDialogInitial({ name: trip?.name ?? 'My LA28 Trip', tripDate: null, tags: [] });
+    setSaveDialogInitial({ name: trip?.name ?? t('planner.defaultTripName'), tripDate: null, tags: [] });
     setSaveError(null);
     setSaveDialogOpen(true);
   };
@@ -853,7 +859,7 @@ export default function UnifiedPlannerScreen() {
       await api.createItinerary({ name, trip_date: tripDate, tags, saved_plan: buildSnapshot() });
       setSaveDialogOpen(false);
     } catch (e: unknown) {
-      setSaveError(e instanceof Error ? e.message : 'Could not save this trip.');
+      setSaveError(e instanceof Error ? e.message : t('planner.saveFailed'));
     } finally {
       setSaving(false);
     }
@@ -879,9 +885,10 @@ export default function UnifiedPlannerScreen() {
       {/* ── Map layers legend (bottom-left) ──────────────────────────────── */}
       {!mapError && (
         <div style={LEGEND_STYLE}>
-          <div style={{ ...LEGEND_LABEL, fontSize: 9, color: '#9CA3AF', letterSpacing: '0.06em', marginBottom: 4 }}>NEARBY</div>
+          <div style={{ ...LEGEND_LABEL, fontSize: 9, color: '#9CA3AF', letterSpacing: '0.06em', marginBottom: 4 }}>{t('planner.legend.nearby')}</div>
           {(Object.keys(TRANSIT_LAYER_CONFIG) as TransitLayer[]).map((layer) => {
-            const { label, fill, displayName } = TRANSIT_LAYER_CONFIG[layer];
+            const { label, fill } = TRANSIT_LAYER_CONFIG[layer];
+            const displayName = t(`transitLegend.${layer}`);
             const active = layerVisibility[layer];
             return (
               <div key={layer} onClick={() => setLayerVisibility((prev) => ({ ...prev, [layer]: !prev[layer] }))} style={{ ...LEGEND_ROW, cursor: 'pointer', opacity: active ? 1 : 0.4 }}>
@@ -893,14 +900,14 @@ export default function UnifiedPlannerScreen() {
             );
           })}
           <div style={{ borderTop: '1px solid #E5E7EB', marginTop: 4, marginBottom: 4 }} />
-          <div style={{ ...LEGEND_LABEL, fontSize: 9, color: '#9CA3AF', letterSpacing: '0.06em', marginBottom: 4 }}>LIVE</div>
+          <div style={{ ...LEGEND_LABEL, fontSize: 9, color: '#9CA3AF', letterSpacing: '0.06em', marginBottom: 4 }}>{t('planner.legend.live')}</div>
           <div onClick={() => setLiveEnabled((v) => !v)} style={{ ...LEGEND_ROW, cursor: 'pointer', opacity: liveEnabled ? 1 : 0.5 }}>
             <div style={{ width: 18, height: 18, background: liveEnabled ? LIVE_COLORS.scooter : '#9CA3AF', transform: 'rotate(45deg)', borderRadius: 3, flexShrink: 0 }} />
-            <span style={{ ...LEGEND_LABEL, fontSize: 11, color: liveEnabled ? '#374151' : '#9CA3AF' }}>Bikes &amp; scooters</span>
+            <span style={{ ...LEGEND_LABEL, fontSize: 11, color: liveEnabled ? '#374151' : '#9CA3AF' }}>{t('planner.legend.bikesScooters')}</span>
           </div>
           {liveEnabled && (
             <div style={{ ...LEGEND_LABEL, fontSize: 10, color: '#9CA3AF', maxWidth: 130, lineHeight: '1.3', marginTop: 2 }}>
-              {liveLoading ? 'Loading live availability…' : liveError ?? `${liveItems.length} nearby · updates on refresh`}
+              {liveLoading ? t('planner.legend.loadingLive') : liveError ?? t('planner.legend.liveCount', { count: liveItems.length })}
             </div>
           )}
         </div>
@@ -910,13 +917,13 @@ export default function UnifiedPlannerScreen() {
       {!mapError && (
         <div style={PANEL_STYLE}>
           <View style={[styles.panelHeader, styles.panelHeaderRow]}>
-            <Text style={styles.panelTitle}>LA28 PLANNER</Text>
-            <Pressable onPress={() => router.push('/itineraries')} accessibilityRole="button" accessibilityLabel="My Itineraries" style={styles.gearBtn}>
+            <Text style={styles.panelTitle}>{t('planner.title')}</Text>
+            <Pressable onPress={() => router.push('/itineraries')} accessibilityRole="button" accessibilityLabel={t('planner.myItineraries')} style={styles.gearBtn}>
               <Feather name="bookmark" size={16} color={colors.primary} />
             </Pressable>
           </View>
           <View style={{ marginBottom: spacing.sm }}>
-            <PolicyBanner text={GAMES_POLICY} compact />
+            <PolicyBanner text={t('common.gamesPolicy')} compact />
           </View>
 
           {error && (
@@ -929,8 +936,8 @@ export default function UnifiedPlannerScreen() {
           {!onboardingDone ? (
             wizardStep === 'destination' ? (
               <View style={{ gap: spacing.sm }}>
-                <Text style={styles.stepTitle}>Where do you want to go?</Text>
-                <Text style={styles.stepHint}>Add every venue or airport on your trip — search below or click a marker on the map.</Text>
+                <Text style={styles.stepTitle}>{t('planner.wizard.destinationTitle')}</Text>
+                <Text style={styles.stepHint}>{t('planner.wizard.destinationHint')}</Text>
                 <StopSearch addedNames={addedNames} onSelect={handleSelectSearchItem} />
                 {stops.length > 0 && (
                   <View style={{ gap: 4, marginTop: spacing.xs }}>
@@ -941,12 +948,12 @@ export default function UnifiedPlannerScreen() {
                           disabled={s.venue_id == null}
                           style={styles.stopRowTapArea}
                           accessibilityRole="button"
-                          accessibilityLabel={`View details for ${s.name}`}
+                          accessibilityLabel={t('planner.stop.viewDetailsFor', { name: s.name })}
                         >
                           <View style={styles.miniStopBadge}><Text style={styles.miniStopBadgeText}>{i + 1}</Text></View>
                           <Text style={styles.miniStopName} numberOfLines={1}>{s.name}</Text>
                         </Pressable>
-                        <Pressable onPress={() => removeStop(s.id)} hitSlop={8} accessibilityLabel={`Remove ${s.name}`}>
+                        <Pressable onPress={() => removeStop(s.id)} hitSlop={8} accessibilityLabel={t('planner.stop.removeName', { name: s.name })}>
                           <Feather name="x" size={14} color={colors.mutedFg} />
                         </Pressable>
                       </View>
@@ -959,19 +966,19 @@ export default function UnifiedPlannerScreen() {
                   accessibilityRole="button"
                   style={({ pressed }) => [styles.primaryBtn, stops.length === 0 && styles.primaryBtnDisabled, pressed && { opacity: 0.85 }]}
                 >
-                  <Text style={styles.primaryBtnText}>Next</Text>
+                  <Text style={styles.primaryBtnText}>{t('common.next')}</Text>
                   <Feather name="arrow-right" size={15} color={colors.onPrimary} />
                 </Pressable>
               </View>
             ) : (
               <View style={{ gap: spacing.sm }}>
-                <Text style={styles.stepTitle}>Which ways are you open to traveling?</Text>
-                <Text style={styles.stepHint}>We'll rank real routes across whatever you allow.</Text>
+                <Text style={styles.stepTitle}>{t('planner.wizard.preferencesTitle')}</Text>
+                <Text style={styles.stepHint}>{t('planner.wizard.preferencesHint')}</Text>
                 <ModePreferencesChecklist selected={draftPrefs} onChange={setDraftPrefs} />
                 <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.xs }}>
                   <Pressable onPress={() => setWizardStep('destination')} accessibilityRole="button" style={({ pressed }) => [styles.secondaryBtn, pressed && { opacity: 0.85 }]}>
                     <Feather name="arrow-left" size={14} color={colors.primary} />
-                    <Text style={styles.secondaryBtnText}>Back</Text>
+                    <Text style={styles.secondaryBtnText}>{t('common.back')}</Text>
                   </Pressable>
                   <Pressable
                     onPress={finishOnboarding}
@@ -979,10 +986,10 @@ export default function UnifiedPlannerScreen() {
                     accessibilityRole="button"
                     style={({ pressed }) => [styles.primaryBtn, { flex: 1 }, draftPrefs.length === 0 && styles.primaryBtnDisabled, pressed && { opacity: 0.85 }]}
                   >
-                    <Text style={styles.primaryBtnText}>View Trip</Text>
+                    <Text style={styles.primaryBtnText}>{t('planner.wizard.viewTrip')}</Text>
                   </Pressable>
                 </View>
-                {draftPrefs.length === 0 && <Text style={styles.stepHint}>Select at least one way to travel.</Text>}
+                {draftPrefs.length === 0 && <Text style={styles.stepHint}>{t('planner.wizard.selectAtLeastOne')}</Text>}
               </View>
             )
           ) : (
@@ -990,10 +997,10 @@ export default function UnifiedPlannerScreen() {
               {/* Summary + preferences toggle */}
               <View style={styles.summaryRow}>
                 <Text style={styles.summaryText}>
-                  {stops.length} stops{totalMinutes > 0 ? ` · ${formatDuration(totalMinutes * 60)}` : ''}{totalCost > 0 ? ` · ~$${totalCost.toFixed(2)}` : ''}
+                  {t('common.stop', { count: stops.length })}{totalMinutes > 0 ? ` · ${formatDuration(totalMinutes * 60)}` : ''}{totalCost > 0 ? ` · ~$${totalCost.toFixed(2)}` : ''}
                 </Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <Pressable onPress={openSaveDialog} accessibilityRole="button" accessibilityLabel="Save this trip" style={styles.gearBtn}>
+                  <Pressable onPress={openSaveDialog} accessibilityRole="button" accessibilityLabel={t('planner.saveThisTrip')} style={styles.gearBtn}>
                     <Feather name="bookmark" size={14} color={colors.primary} />
                   </Pressable>
                   <Pressable onPress={() => setPrefsOpen((v) => !v)} accessibilityRole="button" style={styles.gearBtn}>
@@ -1020,18 +1027,18 @@ export default function UnifiedPlannerScreen() {
                       disabled={s.venue_id == null}
                       style={styles.stopRowTapArea}
                       accessibilityRole="button"
-                      accessibilityLabel={`View details for ${s.name}`}
+                      accessibilityLabel={t('planner.stop.viewDetailsFor', { name: s.name })}
                     >
                       <View style={styles.miniStopBadge}><Text style={styles.miniStopBadgeText}>{i + 1}</Text></View>
                       <Text style={styles.miniStopName} numberOfLines={1}>{s.name}</Text>
                     </Pressable>
-                    <Pressable onPress={() => moveStop(i, -1)} disabled={i === 0} hitSlop={6} accessibilityLabel={`Move ${s.name} up`}>
+                    <Pressable onPress={() => moveStop(i, -1)} disabled={i === 0} hitSlop={6} accessibilityLabel={t('planner.stop.moveUp', { name: s.name })}>
                       <Feather name="chevron-up" size={15} color={i === 0 ? colors.border : colors.muted} />
                     </Pressable>
-                    <Pressable onPress={() => moveStop(i, 1)} disabled={i === stops.length - 1} hitSlop={6} accessibilityLabel={`Move ${s.name} down`}>
+                    <Pressable onPress={() => moveStop(i, 1)} disabled={i === stops.length - 1} hitSlop={6} accessibilityLabel={t('planner.stop.moveDown', { name: s.name })}>
                       <Feather name="chevron-down" size={15} color={i === stops.length - 1 ? colors.border : colors.muted} />
                     </Pressable>
-                    <Pressable onPress={() => removeStop(s.id)} hitSlop={6} accessibilityLabel={`Remove ${s.name}`}>
+                    <Pressable onPress={() => removeStop(s.id)} hitSlop={6} accessibilityLabel={t('planner.stop.removeName', { name: s.name })}>
                       <Feather name="x-circle" size={15} color={colors.mutedFg} />
                     </Pressable>
                   </View>
@@ -1043,7 +1050,7 @@ export default function UnifiedPlannerScreen() {
               ) : (
                 <Pressable onPress={() => setAddingStop(true)} accessibilityRole="button" style={styles.addStopBtn}>
                   <Feather name="plus" size={14} color={colors.primary} />
-                  <Text style={styles.addStopText}>Add stop</Text>
+                  <Text style={styles.addStopText}>{t('planner.stop.addStop')}</Text>
                 </Pressable>
               )}
 
@@ -1065,7 +1072,7 @@ export default function UnifiedPlannerScreen() {
                         <Text style={styles.legError}>{err}</Text>
                         <Pressable onPress={() => optimizeLeg(from, to)} style={styles.secondaryBtn}>
                           <Feather name="refresh-cw" size={12} color={colors.primary} />
-                          <Text style={styles.secondaryBtnText}>Retry</Text>
+                          <Text style={styles.secondaryBtnText}>{t('common.retry')}</Text>
                         </Pressable>
                       </View>
                     )}
@@ -1082,11 +1089,11 @@ export default function UnifiedPlannerScreen() {
                             >
                               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                                 <Text style={[styles.optionLabel, active && styles.optionLabelActive]} numberOfLines={1}>{opt.label}</Text>
-                                {idx === 0 && <Text style={styles.bestBadge}>BEST</Text>}
+                                {idx === 0 && <Text style={styles.bestBadge}>{t('planner.leg.best')}</Text>}
                               </View>
                               <Text style={styles.optionMeta}>
                                 {formatDuration(opt.total_minutes * 60)} · ~${opt.total_cost_usd.toFixed(2)}
-                                {opt.num_transfers > 0 ? ` · ${opt.num_transfers} transfer${opt.num_transfers === 1 ? '' : 's'}` : ''}
+                                {opt.num_transfers > 0 ? ` · ${t('common.transfer', { count: opt.num_transfers })}` : ''}
                               </Text>
                             </Pressable>
                           );
@@ -1095,7 +1102,7 @@ export default function UnifiedPlannerScreen() {
                         {selId && (
                           <>
                             <Pressable onPress={() => setExpandedLeg(expandedLeg === key ? null : key)} style={styles.stepsToggle}>
-                              <Text style={styles.secondaryBtnText}>{expandedLeg === key ? 'Hide steps' : 'Show steps'}</Text>
+                              <Text style={styles.secondaryBtnText}>{expandedLeg === key ? t('planner.leg.hideSteps') : t('planner.leg.showSteps')}</Text>
                               <Feather name={expandedLeg === key ? 'chevron-up' : 'chevron-down'} size={13} color={colors.primary} />
                             </Pressable>
                             {expandedLeg === key && (
@@ -1157,7 +1164,7 @@ export default function UnifiedPlannerScreen() {
       {hydrating && (
         <View style={styles.overlay}>
           <ActivityIndicator color={colors.primary} size="large" />
-          <Text style={styles.stepHint}>Opening your saved trip — refreshing live routes…</Text>
+          <Text style={styles.stepHint}>{t('planner.opening')}</Text>
         </View>
       )}
     </View>

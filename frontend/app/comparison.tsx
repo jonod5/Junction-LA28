@@ -1,6 +1,7 @@
 import { Feather } from '@expo/vector-icons';
 import { useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
   SafeAreaView,
@@ -33,34 +34,19 @@ const MODE_META: Record<
   Mode,
   {
     icon: React.ComponentProps<typeof Feather>['name'];
-    label: string;
+    labelKey: string;
     recommended: boolean;
     discouraged: boolean;
-    badge?: string;
   }
 > = {
-  transit: {
-    icon: 'navigation',
-    label: 'Transit',
-    recommended: true,
-    discouraged: false,
-    badge: 'Recommended',
-  },
-  walking: { icon: 'user', label: 'Walk', recommended: false, discouraged: false },
-  bicycling: { icon: 'activity', label: 'Bike', recommended: false, discouraged: false },
-  driving: {
-    icon: 'truck',
-    label: 'Drive',
-    recommended: false,
-    discouraged: true,
-    badge: 'Discouraged',
-  },
+  transit: { icon: 'navigation', labelKey: 'comparison.modes.transit', recommended: true, discouraged: false },
+  walking: { icon: 'user', labelKey: 'comparison.modes.walk', recommended: false, discouraged: false },
+  bicycling: { icon: 'activity', labelKey: 'comparison.modes.bike', recommended: false, discouraged: false },
+  driving: { icon: 'truck', labelKey: 'comparison.modes.drive', recommended: false, discouraged: true },
 };
 
-const GAMES_POLICY =
-  'No spectator parking at venues during LA28 Games. Attendees must use transit, sanctioned park-and-ride, or active transport.';
-
 export default function ComparisonScreen() {
+  const { t } = useTranslation();
   const { trip } = useTrip();
   const params = useLocalSearchParams<{ fromStopId?: string; toStopId?: string }>();
 
@@ -105,7 +91,7 @@ export default function ComparisonScreen() {
       } catch (e: unknown) {
         setErrors((prev) => ({
           ...prev,
-          [mode]: e instanceof Error ? e.message : 'No route found',
+          [mode]: e instanceof Error ? e.message : t('comparison.noRouteFound'),
         }));
       } finally {
         setLoadingModes((prev) => {
@@ -121,7 +107,7 @@ export default function ComparisonScreen() {
     return (
       <SafeAreaView style={styles.screen}>
         <View style={styles.center}>
-          <Text style={styles.emptyText}>Add at least 2 venues to compare routes.</Text>
+          <Text style={styles.emptyText}>{t('comparison.emptyState')}</Text>
         </View>
       </SafeAreaView>
     );
@@ -145,13 +131,19 @@ export default function ComparisonScreen() {
         </View>
 
         {/* LA28 policy banner */}
-        <PolicyBanner text={GAMES_POLICY} />
+        <PolicyBanner text={t('common.gamesPolicy')} />
 
-        <Text style={styles.sectionTitle}>Travel Options</Text>
+        <Text style={styles.sectionTitle}>{t('comparison.travelOptions')}</Text>
 
         {/* Mode cards */}
         {MODES.map((mode) => {
           const meta = MODE_META[mode];
+          const label = t(meta.labelKey);
+          const badge = meta.recommended
+            ? t('comparison.badges.recommended')
+            : meta.discouraged
+              ? t('comparison.badges.discouraged')
+              : undefined;
           const result = results[mode];
           const error = errors[mode];
           const isLoading = loadingModes.has(mode);
@@ -192,9 +184,9 @@ export default function ComparisonScreen() {
                     meta.discouraged && styles.modeLabelDiscouraged,
                   ]}
                 >
-                  {meta.label}
+                  {label}
                 </Text>
-                {meta.badge && (
+                {badge && (
                   <View
                     style={[
                       styles.badge,
@@ -209,7 +201,7 @@ export default function ComparisonScreen() {
                           : styles.badgeTextDiscouraged,
                       ]}
                     >
-                      {meta.badge}
+                      {badge}
                     </Text>
                   </View>
                 )}
@@ -252,8 +244,8 @@ export default function ComparisonScreen() {
                   />
                   <Text style={styles.liveText}>
                     {liveStatus.live
-                      ? `Live · ${liveStatus.vehicles_running} vehicle${liveStatus.vehicles_running === 1 ? '' : 's'} running now`
-                      : 'No live vehicles on this line right now'}
+                      ? t('comparison.live.running', { count: liveStatus.vehicles_running })
+                      : t('comparison.live.none')}
                   </Text>
                 </View>
               )}
@@ -262,8 +254,7 @@ export default function ComparisonScreen() {
                 <View style={styles.discouragedNote}>
                   <Feather name="alert-triangle" size={13} color={colors.drivingWarning} />
                   <Text style={styles.discouragedNoteText}>
-                    Venue parking is closed to spectators during LA28 Games. Driving is not the
-                    recommended option.
+                    {t('comparison.discouragedNote')}
                   </Text>
                 </View>
               )}
@@ -278,10 +269,7 @@ export default function ComparisonScreen() {
 
         <View style={styles.footer}>
           <Feather name="info" size={13} color={colors.muted} />
-          <Text style={styles.footerText}>
-            Times are estimates under normal conditions. Expect higher demand during LA28 Games.
-            Always check Metro and event-day shuttle schedules.
-          </Text>
+          <Text style={styles.footerText}>{t('comparison.footer')}</Text>
         </View>
       </ScrollView>
     </SafeAreaView>

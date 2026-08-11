@@ -157,6 +157,29 @@ def test_patch_default_modes_round_trips_and_overwrites_cleanly(client):
     assert resp.json()["preferences"] == {"default_modes": ["bike", "scooter"]}
 
 
+def test_patch_updates_language_without_touching_display_name(client):
+    resp = client.patch("/api/account", json={"language": "es"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["display_name"] == "Rider One"
+    assert body["preferences"] == {"language": "es"}
+
+
+def test_patch_language_round_trips_and_merges_with_default_modes(client):
+    client.patch("/api/account", json={"default_modes": ["walk"]})
+    resp = client.patch("/api/account", json={"language": "fr"})
+    assert resp.json()["preferences"] == {"default_modes": ["walk"], "language": "fr"}
+    assert client.get("/api/account").json()["preferences"] == {
+        "default_modes": ["walk"],
+        "language": "fr",
+    }
+
+
+def test_patch_rejects_unsupported_language(client):
+    resp = client.patch("/api/account", json={"language": "de"})
+    assert resp.status_code == 422
+
+
 @patch("app.routers.account.httpx.Client", _FakeHttpxClient)
 def test_delete_account_calls_supabase_admin_api_then_deletes_locally(client):
     resp = client.delete("/api/account")

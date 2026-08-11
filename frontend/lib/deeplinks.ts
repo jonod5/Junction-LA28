@@ -5,6 +5,11 @@
 // Everything here is an https URL, not a custom scheme (uber://, bird://):
 // on Expo web a custom scheme won't resolve, and the providers' universal
 // https links open the app when installed and the site otherwise.
+//
+// Labels use the module-level i18next instance (not the useTranslation hook)
+// since these are plain functions, not components — "Open in {{provider}}"
+// translates, the brand name itself (Uber, Bird, Metro Bike Share) doesn't.
+import i18next from './i18n';
 
 export interface Place {
   lat: number;
@@ -29,7 +34,11 @@ export function uberLink(origin: Place, destination: Place): DeepLink {
   });
   if (origin.name) p.set('pickup[nickname]', origin.name);
   if (destination.name) p.set('dropoff[nickname]', destination.name);
-  return { provider: 'uber', label: 'Open in Uber', url: `https://m.uber.com/ul/?${p.toString()}` };
+  return {
+    provider: 'uber',
+    label: i18next.t('deepLinks.openIn', { provider: 'Uber' }),
+    url: `https://m.uber.com/ul/?${p.toString()}`,
+  };
 }
 
 /**
@@ -37,26 +46,33 @@ export function uberLink(origin: Place, destination: Place): DeepLink {
  * app/booking site; the traveler sets the destination there.
  */
 export function waymoLink(): DeepLink {
-  return { provider: 'waymo', label: 'Open in Waymo', url: 'https://ride.waymo.com/' };
+  return {
+    provider: 'waymo',
+    label: i18next.t('deepLinks.openIn', { provider: 'Waymo' }),
+    url: 'https://ride.waymo.com/',
+  };
 }
 
 /** Bird — opens the app when installed, else the site/store. */
 export function birdLink(): DeepLink {
-  return { provider: 'bird', label: 'Open Bird', url: 'https://www.bird.co/' };
+  return { provider: 'bird', label: i18next.t('deepLinks.open', { provider: 'Bird' }), url: 'https://www.bird.co/' };
 }
 
 /** Spin. */
 export function spinLink(): DeepLink {
-  return { provider: 'spin', label: 'Open Spin', url: 'https://www.spin.app/' };
+  return { provider: 'spin', label: i18next.t('deepLinks.open', { provider: 'Spin' }), url: 'https://www.spin.app/' };
 }
 
 /** Metro Bike Share. */
 export function metroBikeLink(): DeepLink {
+  // "Metro Bike Share" is LA Metro's brand name for the service, not a verb
+  // phrase — it stays as-is rather than going through the "Open X" pattern.
   return { provider: 'metro-bike-share', label: 'Metro Bike Share', url: 'https://bikeshare.metro.net/' };
 }
 
 /** Metro TAP fares — how to pay for rail/bus. */
 export function metroTapLink(): DeepLink {
+  // Same reasoning — "Metro TAP" is a brand name (LA Metro's fare card).
   return { provider: 'metro-tap', label: 'Metro TAP fares', url: 'https://www.metro.net/riding/fares/' };
 }
 

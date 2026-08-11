@@ -1,0 +1,295 @@
+{
+  "common": {
+    "signIn": "登录",
+    "signInWithGoogle": "使用 Google 登录",
+    "signOut": "退出登录",
+    "cancel": "取消",
+    "save": "保存",
+    "close": "关闭",
+    "back": "返回",
+    "next": "下一步",
+    "retry": "重试",
+    "delete": "删除",
+    "gamesPolicy": "洛杉矶2028奥运会期间，各场馆不提供观众停车位。观众须使用公共交通、指定的换乘停车场或其他绿色出行方式前往。",
+    "walk": "步行",
+    "board": "上车",
+    "exit": "下车",
+    "stop_other": "{{count}} 个站点",
+    "transfer_other": "{{count}} 次换乘"
+  },
+
+  "transitLegend": {
+    "rail": "地铁",
+    "bus": "公交车站",
+    "bike": "共享单车",
+    "scooter": "滑板车区域",
+    "dropoff": "网约车上下客点"
+  },
+
+  "modes": {
+    "transit": "地铁和公交",
+    "metro_micro": "Metro Micro",
+    "bike": "自行车",
+    "scooter": "电动滑板车",
+    "walk": "步行",
+    "ridehail": "网约车",
+    "shortLabel": {
+      "walk": "步行",
+      "bike": "自行车",
+      "scooter": "滑板车",
+      "transit": "公共交通",
+      "metro_micro": "Metro Micro",
+      "ridehail": "网约车",
+      "ebike": "电动自行车"
+    }
+  },
+
+  "deepLinks": {
+    "openIn": "在 {{provider}} 中打开",
+    "open": "打开 {{provider}}"
+  },
+
+  "planner": {
+    "title": "LA28 行程规划",
+    "defaultTripName": "我的 LA28 行程",
+    "myItineraries": "我的行程",
+    "legend": {
+      "nearby": "附近",
+      "live": "实时",
+      "bikesScooters": "自行车和滑板车",
+      "loadingLive": "正在加载实时可用信息…",
+      "liveCount": "附近 {{count}} 辆 · 刷新后更新",
+      "liveUnavailable": "实时信息不可用——显示固定区域"
+    },
+    "wizard": {
+      "destinationTitle": "您想去哪里？",
+      "destinationHint": "添加行程中的每个场馆或机场——在下方搜索，或点击地图上的标记。",
+      "preferencesTitle": "您愿意使用哪些出行方式？",
+      "preferencesHint": "我们会根据您允许的方式，为您匹配真实路线并排序。",
+      "selectAtLeastOne": "请至少选择一种出行方式。",
+      "viewTrip": "查看行程"
+    },
+    "stop": {
+      "viewDetailsFor": "查看 {{name}} 的详情",
+      "removeName": "移除 {{name}}",
+      "moveUp": "将 {{name}} 上移",
+      "moveDown": "将 {{name}} 下移",
+      "addStop": "添加站点"
+    },
+    "summary": {
+      "text": "{{stops}} · {{duration}}",
+      "stopsOnly": "{{stops}}"
+    },
+    "saveThisTrip": "保存此行程",
+    "signInNotConfigured": "此环境未配置登录功能。",
+    "saveFailed": "无法保存此行程。",
+    "opening": "正在打开您保存的行程——刷新实时路线中…",
+    "leg": {
+      "showSteps": "显示步骤",
+      "hideSteps": "隐藏步骤",
+      "best": "最佳"
+    },
+    "mapError": {
+      "keyMissing": "未配置 Google 地图 API 密钥，请联系应用管理员。",
+      "loadFailed": "Google 地图加载失败"
+    },
+    "map": {
+      "liveBadge": "实时 · {{type}}",
+      "availableNow": "当前可用",
+      "availableCount": "{{count}} 辆可用",
+      "docksCount": "{{count}} 个停车位",
+      "distanceAway": "距离 {{distance}} 米 · GBFS",
+      "near": "附近：{{label}}",
+      "walkMinLabel": "{{min}} 分钟",
+      "vehicleType": {
+        "scooter": "滑板车",
+        "bike": "自行车",
+        "ebike": "电动自行车"
+      }
+    }
+  },
+
+  "itineraries": {
+    "title": "我的行程",
+    "signInPrompt": {
+      "title": "登录以查看您保存的行程",
+      "hint": "任何人都可以规划行程——登录后即可保存并稍后查看。",
+      "notConfigured": "此环境未配置登录功能。"
+    },
+    "empty": {
+      "title": "暂无保存的行程",
+      "hint": "在规划器中创建行程，然后点击书签图标即可保存到这里。"
+    },
+    "loadFailed": "无法加载您的行程。",
+    "upcoming": "即将开始",
+    "past": "已过去",
+    "allTag": "全部",
+    "noDate": "未设置日期",
+    "stops_other": "{{count}} 个站点",
+    "actions": {
+      "open": "打开 {{name}}",
+      "pin": "置顶",
+      "unpin": "取消置顶",
+      "rename": "重命名",
+      "editTags": "编辑标签",
+      "delete": "删除"
+    },
+    "prompts": {
+      "renameTitle": "重命名此行程",
+      "tagsTitle": "标签（用逗号分隔）",
+      "deleteConfirm": "删除“{{name}}”？此操作无法撤销。"
+    },
+    "nativeUnavailable": "“我的行程”目前仅在网页版应用中可用。"
+  },
+
+  "settings": {
+    "title": "设置",
+    "nativeUnavailable": "“设置”目前仅在网页版应用中可用。",
+    "signInPrompt": {
+      "title": "登录以管理您的账户",
+      "hint": "只有登录后才能使用设置功能。"
+    },
+    "account": {
+      "sectionTitle": "账户",
+      "editName": "编辑显示名称",
+      "saveName": "保存名称",
+      "nameSaveFailed": "无法保存名称"
+    },
+    "language": {
+      "sectionTitle": "语言",
+      "hint": "立即更改应用语言。",
+      "saveFailed": "无法保存语言偏好设置"
+    },
+    "travelPreferences": {
+      "sectionTitle": "出行偏好",
+      "hint": "默认出行方式——用于预填充新行程的引导流程。",
+      "saving": "正在保存…",
+      "saveFailed": "无法保存偏好设置"
+    },
+    "dataPrivacy": {
+      "sectionTitle": "数据与隐私",
+      "manageItineraries": "管理已保存的行程",
+      "privacyPolicy": "隐私政策",
+      "termsOfService": "服务条款"
+    },
+    "dangerZone": {
+      "sectionTitle": "危险操作区",
+      "deleteAccount": "删除账户",
+      "deleteWarning": "此操作将永久删除您的账户及所有已保存的行程，且无法撤销。请输入 DELETE 以确认。",
+      "deleteConfirmPlaceholder": "DELETE",
+      "deletePermanently": "永久删除",
+      "deleteFailed": "无法删除账户——请重试。"
+    }
+  },
+
+  "account": {
+    "menu": {
+      "accountMenu": "账户菜单"
+    }
+  },
+
+  "venueDetail": {
+    "loading": "正在加载场馆详情…",
+    "live": {
+      "checking": "正在查询实时滑板车/自行车…",
+      "staticOnly": "仅显示固定区域——实时数据不可用",
+      "nearbyCount_other": "附近现有 {{count}} 辆滑板车/自行车",
+      "none": "附近暂无实时滑板车/自行车"
+    },
+    "heroLabel": "赛事期间如何前往",
+    "arrive": "建议提前 {{range}} 到达",
+    "arriveRange": {
+      "minMax": "{{min}}–{{max}} 小时前",
+      "minOnly": "{{min}} 小时以上前",
+      "maxOnly": "最多提前 {{max}} 小时"
+    },
+    "sections": {
+      "transit": "公共交通",
+      "dropoffAccessibility": "上下客点与无障碍设施"
+    },
+    "parking": {
+      "collapseTitle": "停车场（仅限平日——LA28期间不对观众开放）",
+      "lot": "停车场",
+      "lots_other": "{{count}} 个停车场"
+    },
+    "moreDetail": "更多详情",
+    "walkTime": "步行 {{min}} 分钟",
+    "transfer": "换乘",
+    "busLines": "公交线路",
+    "rideshare": {
+      "pickup": "网约车上车点",
+      "postEventDelay": "赛后延迟",
+      "accessibleZone": "无障碍区域",
+      "dropoff": "下车点"
+    },
+    "tdm": {
+      "note": "交通需求管理提示",
+      "arrivalNote": "到达提示",
+      "busyEntry": "拥堵入场道路",
+      "busyExit": "拥堵出场道路"
+    },
+    "viewRouteOptions": "查看路线选项",
+    "closeVenueDetails": "关闭场馆详情",
+    "venue": "场馆",
+    "loadFailed": "无法加载场馆信息",
+    "liveFeedUnavailable": "实时信息不可用"
+  },
+
+  "comparison": {
+    "modalTitle": "前往方式",
+    "emptyState": "请至少添加 2 个场馆以比较路线。",
+    "travelOptions": "出行方式",
+    "modes": {
+      "transit": "公共交通",
+      "walk": "步行",
+      "bike": "自行车",
+      "drive": "驾车"
+    },
+    "badges": {
+      "recommended": "推荐",
+      "discouraged": "不推荐"
+    },
+    "noRouteFound": "未找到路线",
+    "live": {
+      "running_other": "实时 · {{count}} 辆车正在运行",
+      "none": "该线路目前没有实时运行的车辆"
+    },
+    "discouragedNote": "LA28赛事期间，场馆停车场不对观众开放。不建议选择驾车前往。",
+    "footer": "以上时间为正常情况下的预估值。LA28赛事期间预计出行需求会更高，请务必查看地铁及赛事当天接驳车的时刻表。"
+  },
+
+  "venueData": {
+    "sportUse": {
+      "1": "开闭幕式、田径",
+      "2": "美式橄榄球",
+      "3": "棒球",
+      "4": "篮球、拳击",
+      "5": "体操",
+      "6": "足球"
+    },
+    "terminalInfo": {
+      "LAX": "1–8 号航站楼 + 汤姆·布拉德利国际航站楼",
+      "BUR": "单一航站楼",
+      "LGB": "A 航站楼",
+      "ONT": "2 号和 4 号航站楼",
+      "VNY": "私人及包机航空"
+    }
+  },
+
+  "search": {
+    "placeholder": "搜索场馆或机场…",
+    "clear": "清除搜索",
+    "addItem": "添加 {{name}}",
+    "noResults": "未找到匹配项——请尝试其他名称。"
+  },
+
+  "saveDialog": {
+    "title": "保存此行程",
+    "nameLabel": "名称",
+    "namePlaceholder": "例如：开幕周末",
+    "dateLabel": "行程日期（可选）",
+    "dateFormatHint": "请使用 YYYY-MM-DD 格式。",
+    "tagsLabel": "标签（可选，用逗号分隔）",
+    "tagsPlaceholder": "例如：家庭、开幕周末"
+  }
+}

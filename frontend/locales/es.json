@@ -1,0 +1,301 @@
+{
+  "common": {
+    "signIn": "Iniciar sesión",
+    "signInWithGoogle": "Iniciar sesión con Google",
+    "signOut": "Cerrar sesión",
+    "cancel": "Cancelar",
+    "save": "Guardar",
+    "close": "Cerrar",
+    "back": "Atrás",
+    "next": "Siguiente",
+    "retry": "Reintentar",
+    "delete": "Eliminar",
+    "gamesPolicy": "No hay estacionamiento para espectadores en las sedes durante los Juegos de LA28. Los asistentes deben usar transporte público, estacionamiento autorizado con traslado, o transporte activo.",
+    "walk": "Caminar",
+    "board": "Abordar",
+    "exit": "Bajar",
+    "stop_one": "{{count}} parada",
+    "stop_other": "{{count}} paradas",
+    "transfer_one": "{{count}} transbordo",
+    "transfer_other": "{{count}} transbordos"
+  },
+
+  "transitLegend": {
+    "rail": "Metro Rail",
+    "bus": "Parada de autobús",
+    "bike": "Bicicletas compartidas",
+    "scooter": "Zona de scooters",
+    "dropoff": "Punto de recogida"
+  },
+
+  "modes": {
+    "transit": "Metro y autobús",
+    "metro_micro": "Metro Micro",
+    "bike": "Bicicleta",
+    "scooter": "Scooter eléctrico",
+    "walk": "Caminar",
+    "ridehail": "Viaje compartido",
+    "shortLabel": {
+      "walk": "Caminar",
+      "bike": "Bici",
+      "scooter": "Scooter",
+      "transit": "Transporte público",
+      "metro_micro": "Metro Micro",
+      "ridehail": "Viaje compartido",
+      "ebike": "Bici eléctrica"
+    }
+  },
+
+  "deepLinks": {
+    "openIn": "Abrir en {{provider}}",
+    "open": "Abrir {{provider}}"
+  },
+
+  "planner": {
+    "title": "Planificador LA28",
+    "defaultTripName": "Mi viaje LA28",
+    "myItineraries": "Mis itinerarios",
+    "legend": {
+      "nearby": "CERCA",
+      "live": "EN VIVO",
+      "bikesScooters": "Bicicletas y scooters",
+      "loadingLive": "Cargando disponibilidad en vivo…",
+      "liveCount": "{{count}} cerca · se actualiza al refrescar",
+      "liveUnavailable": "Feeds en vivo no disponibles — mostrando zonas estáticas"
+    },
+    "wizard": {
+      "destinationTitle": "¿A dónde quieres ir?",
+      "destinationHint": "Agrega cada sede o aeropuerto de tu viaje — busca abajo o toca un marcador en el mapa.",
+      "preferencesTitle": "¿Qué formas de viajar prefieres?",
+      "preferencesHint": "Clasificaremos rutas reales según lo que permitas.",
+      "selectAtLeastOne": "Selecciona al menos una forma de viajar.",
+      "viewTrip": "Ver viaje"
+    },
+    "stop": {
+      "viewDetailsFor": "Ver detalles de {{name}}",
+      "removeName": "Quitar {{name}}",
+      "moveUp": "Mover {{name}} hacia arriba",
+      "moveDown": "Mover {{name}} hacia abajo",
+      "addStop": "Agregar parada"
+    },
+    "summary": {
+      "text": "{{stops}} · {{duration}}",
+      "stopsOnly": "{{stops}}"
+    },
+    "saveThisTrip": "Guardar este viaje",
+    "signInNotConfigured": "El inicio de sesión no está configurado en este entorno.",
+    "saveFailed": "No se pudo guardar este viaje.",
+    "opening": "Abriendo tu viaje guardado — actualizando rutas en vivo…",
+    "leg": {
+      "showSteps": "Mostrar pasos",
+      "hideSteps": "Ocultar pasos",
+      "best": "MEJOR"
+    },
+    "mapError": {
+      "keyMissing": "La clave de la API de Google Maps no está configurada. Contacta al administrador de la aplicación.",
+      "loadFailed": "No se pudo cargar Google Maps"
+    },
+    "map": {
+      "liveBadge": "EN VIVO · {{type}}",
+      "availableNow": "Disponible ahora",
+      "availableCount": "{{count}} disponibles",
+      "docksCount": "{{count}} estaciones",
+      "distanceAway": "A {{distance}} m · GBFS",
+      "near": "Cerca de: {{label}}",
+      "walkMinLabel": "{{min}} min",
+      "vehicleType": {
+        "scooter": "Scooter",
+        "bike": "Bicicleta",
+        "ebike": "Bici eléctrica"
+      }
+    }
+  },
+
+  "itineraries": {
+    "title": "Mis itinerarios",
+    "signInPrompt": {
+      "title": "Inicia sesión para ver tus viajes guardados",
+      "hint": "Cualquiera puede planificar un viaje — iniciar sesión solo te permite guardarlos y revisarlos después.",
+      "notConfigured": "El inicio de sesión no está configurado en este entorno."
+    },
+    "empty": {
+      "title": "Aún no hay viajes guardados",
+      "hint": "Crea un viaje en el planificador y luego toca el ícono de marcador para guardarlo aquí."
+    },
+    "loadFailed": "No se pudieron cargar tus itinerarios.",
+    "upcoming": "Próximos",
+    "past": "Pasados",
+    "allTag": "Todos",
+    "noDate": "Sin fecha definida",
+    "stops_one": "{{count}} parada",
+    "stops_other": "{{count}} paradas",
+    "actions": {
+      "open": "Abrir {{name}}",
+      "pin": "Fijar",
+      "unpin": "Quitar fijado",
+      "rename": "Renombrar",
+      "editTags": "Editar etiquetas",
+      "delete": "Eliminar"
+    },
+    "prompts": {
+      "renameTitle": "Renombrar este viaje",
+      "tagsTitle": "Etiquetas (separadas por comas)",
+      "deleteConfirm": "¿Eliminar \"{{name}}\"? Esta acción no se puede deshacer."
+    },
+    "nativeUnavailable": "Mis itinerarios está disponible por ahora en la aplicación web."
+  },
+
+  "settings": {
+    "title": "Configuración",
+    "nativeUnavailable": "Configuración está disponible por ahora en la aplicación web.",
+    "signInPrompt": {
+      "title": "Inicia sesión para administrar tu cuenta",
+      "hint": "La configuración solo está disponible cuando has iniciado sesión."
+    },
+    "account": {
+      "sectionTitle": "Cuenta",
+      "editName": "Editar nombre visible",
+      "saveName": "Guardar nombre",
+      "nameSaveFailed": "No se pudo guardar el nombre"
+    },
+    "language": {
+      "sectionTitle": "Idioma",
+      "hint": "Cambia el idioma de la aplicación de inmediato.",
+      "saveFailed": "No se pudo guardar la preferencia de idioma"
+    },
+    "travelPreferences": {
+      "sectionTitle": "Preferencias de viaje",
+      "hint": "Formas de viajar predeterminadas — se usan para prellenar el inicio de un nuevo viaje.",
+      "saving": "Guardando…",
+      "saveFailed": "No se pudieron guardar las preferencias"
+    },
+    "dataPrivacy": {
+      "sectionTitle": "Datos y privacidad",
+      "manageItineraries": "Administrar itinerarios guardados",
+      "privacyPolicy": "Política de privacidad",
+      "termsOfService": "Términos de servicio"
+    },
+    "dangerZone": {
+      "sectionTitle": "Zona de riesgo",
+      "deleteAccount": "Eliminar cuenta",
+      "deleteWarning": "Esto elimina permanentemente tu cuenta y todos los itinerarios guardados. Esta acción no se puede deshacer. Escribe DELETE para confirmar.",
+      "deleteConfirmPlaceholder": "DELETE",
+      "deletePermanently": "Eliminar permanentemente",
+      "deleteFailed": "No se pudo eliminar la cuenta — inténtalo de nuevo."
+    }
+  },
+
+  "account": {
+    "menu": {
+      "accountMenu": "Menú de la cuenta"
+    }
+  },
+
+  "venueDetail": {
+    "loading": "Cargando detalles de la sede…",
+    "live": {
+      "checking": "Consultando scooters/bicicletas en vivo…",
+      "staticOnly": "Solo zonas estáticas — feed en vivo no disponible",
+      "nearbyCount_one": "{{count}} scooter/bicicleta cerca ahora",
+      "nearbyCount_other": "{{count}} scooters/bicicletas cerca ahora",
+      "none": "No hay scooters/bicicletas en vivo cerca ahora mismo"
+    },
+    "heroLabel": "CÓMO LLEGAR DURANTE LOS JUEGOS",
+    "arrive": "Llega {{range}}",
+    "arriveRange": {
+      "minMax": "{{min}}–{{max}} h antes",
+      "minOnly": "{{min}}+ h antes",
+      "maxOnly": "hasta {{max}} h antes"
+    },
+    "sections": {
+      "transit": "TRANSPORTE",
+      "dropoffAccessibility": "PUNTO DE BAJADA Y ACCESIBILIDAD"
+    },
+    "parking": {
+      "collapseTitle": "Estacionamiento (solo días normales — cerrado a espectadores durante LA28)",
+      "lot": "Estacionamiento",
+      "lots_one": "{{count}} estacionamiento",
+      "lots_other": "{{count}} estacionamientos"
+    },
+    "moreDetail": "Más detalles",
+    "walkTime": "{{min}} min a pie",
+    "transfer": "Transbordo",
+    "busLines": "Líneas de autobús",
+    "rideshare": {
+      "pickup": "Punto de recogida",
+      "postEventDelay": "Demora después del evento",
+      "accessibleZone": "Zona accesible",
+      "dropoff": "Punto de bajada"
+    },
+    "tdm": {
+      "note": "Nota de TDM",
+      "arrivalNote": "Nota de llegada",
+      "busyEntry": "Vías de entrada congestionadas",
+      "busyExit": "Vías de salida congestionadas"
+    },
+    "viewRouteOptions": "Ver opciones de ruta",
+    "closeVenueDetails": "Cerrar detalles de la sede",
+    "venue": "Sede",
+    "loadFailed": "No se pudo cargar la sede",
+    "liveFeedUnavailable": "Feed en vivo no disponible"
+  },
+
+  "comparison": {
+    "modalTitle": "Cómo llegar",
+    "emptyState": "Agrega al menos 2 sedes para comparar rutas.",
+    "travelOptions": "Opciones de viaje",
+    "modes": {
+      "transit": "Transporte público",
+      "walk": "Caminar",
+      "bike": "Bicicleta",
+      "drive": "Conducir"
+    },
+    "badges": {
+      "recommended": "Recomendado",
+      "discouraged": "No recomendado"
+    },
+    "noRouteFound": "No se encontró ninguna ruta",
+    "live": {
+      "running_one": "En vivo · {{count}} vehículo en circulación",
+      "running_other": "En vivo · {{count}} vehículos en circulación",
+      "none": "No hay vehículos en vivo en esta línea ahora mismo"
+    },
+    "discouragedNote": "El estacionamiento de la sede está cerrado a espectadores durante los Juegos de LA28. Conducir no es la opción recomendada.",
+    "footer": "Los tiempos son estimados en condiciones normales. Se espera mayor demanda durante los Juegos de LA28. Consulta siempre los horarios de Metro y de los traslados del día del evento."
+  },
+
+  "venueData": {
+    "sportUse": {
+      "1": "Ceremonia de apertura/clausura, atletismo",
+      "2": "Fútbol americano",
+      "3": "Béisbol",
+      "4": "Baloncesto, boxeo",
+      "5": "Gimnasia",
+      "6": "Fútbol"
+    },
+    "terminalInfo": {
+      "LAX": "Terminales 1–8 + Tom Bradley International",
+      "BUR": "Terminal única",
+      "LGB": "Terminal A",
+      "ONT": "Terminales 2 y 4",
+      "VNY": "Aviación privada y chárter"
+    }
+  },
+
+  "search": {
+    "placeholder": "Buscar sedes o aeropuertos…",
+    "clear": "Borrar búsqueda",
+    "addItem": "Agregar {{name}}",
+    "noResults": "Sin resultados — prueba con otro nombre."
+  },
+
+  "saveDialog": {
+    "title": "Guardar este viaje",
+    "nameLabel": "Nombre",
+    "namePlaceholder": "p. ej. Fin de semana inaugural",
+    "dateLabel": "Fecha del viaje (opcional)",
+    "dateFormatHint": "Usa el formato AAAA-MM-DD.",
+    "tagsLabel": "Etiquetas (opcional, separadas por comas)",
+    "tagsPlaceholder": "p. ej. Familia, Fin de semana inaugural"
+  }
+}

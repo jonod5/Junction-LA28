@@ -1,0 +1,301 @@
+{
+  "common": {
+    "signIn": "Sign in",
+    "signInWithGoogle": "Sign in with Google",
+    "signOut": "Sign out",
+    "cancel": "Cancel",
+    "save": "Save",
+    "close": "Close",
+    "back": "Back",
+    "next": "Next",
+    "retry": "Retry",
+    "delete": "Delete",
+    "gamesPolicy": "No spectator parking at venues during LA28 Games. Attendees must use transit, sanctioned park-and-ride, or active transport.",
+    "walk": "Walk",
+    "board": "Board",
+    "exit": "Exit",
+    "stop_one": "{{count}} stop",
+    "stop_other": "{{count}} stops",
+    "transfer_one": "{{count}} transfer",
+    "transfer_other": "{{count}} transfers"
+  },
+
+  "transitLegend": {
+    "rail": "Metro Rail",
+    "bus": "Bus Stop",
+    "bike": "Bike Share",
+    "scooter": "Scooter Zone",
+    "dropoff": "Rideshare P/U"
+  },
+
+  "modes": {
+    "transit": "Metro rail & bus",
+    "metro_micro": "Metro Micro",
+    "bike": "Bike",
+    "scooter": "E-scooter",
+    "walk": "Walk",
+    "ridehail": "Ride-hail",
+    "shortLabel": {
+      "walk": "Walk",
+      "bike": "Bike",
+      "scooter": "Scooter",
+      "transit": "Transit",
+      "metro_micro": "Metro Micro",
+      "ridehail": "Rideshare",
+      "ebike": "E-bike"
+    }
+  },
+
+  "deepLinks": {
+    "openIn": "Open in {{provider}}",
+    "open": "Open {{provider}}"
+  },
+
+  "planner": {
+    "title": "LA28 Planner",
+    "defaultTripName": "My LA28 Trip",
+    "myItineraries": "My Itineraries",
+    "legend": {
+      "nearby": "NEARBY",
+      "live": "LIVE",
+      "bikesScooters": "Bikes & scooters",
+      "loadingLive": "Loading live availability…",
+      "liveCount": "{{count}} nearby · updates on refresh",
+      "liveUnavailable": "Live feeds unavailable — showing static zones"
+    },
+    "wizard": {
+      "destinationTitle": "Where do you want to go?",
+      "destinationHint": "Add every venue or airport on your trip — search below or click a marker on the map.",
+      "preferencesTitle": "Which ways are you open to traveling?",
+      "preferencesHint": "We'll rank real routes across whatever you allow.",
+      "selectAtLeastOne": "Select at least one way to travel.",
+      "viewTrip": "View Trip"
+    },
+    "stop": {
+      "viewDetailsFor": "View details for {{name}}",
+      "removeName": "Remove {{name}}",
+      "moveUp": "Move {{name}} up",
+      "moveDown": "Move {{name}} down",
+      "addStop": "Add stop"
+    },
+    "summary": {
+      "text": "{{stops}} · {{duration}}",
+      "stopsOnly": "{{stops}}"
+    },
+    "saveThisTrip": "Save this trip",
+    "signInNotConfigured": "Sign-in is not configured in this environment.",
+    "saveFailed": "Could not save this trip.",
+    "opening": "Opening your saved trip — refreshing live routes…",
+    "leg": {
+      "showSteps": "Show steps",
+      "hideSteps": "Hide steps",
+      "best": "BEST"
+    },
+    "mapError": {
+      "keyMissing": "Google Maps API key is not configured. Contact the app administrator.",
+      "loadFailed": "Failed to load Google Maps"
+    },
+    "map": {
+      "liveBadge": "LIVE · {{type}}",
+      "availableNow": "Available now",
+      "availableCount": "{{count}} available",
+      "docksCount": "{{count}} docks",
+      "distanceAway": "{{distance}} m away · GBFS",
+      "near": "Near: {{label}}",
+      "walkMinLabel": "{{min}} min",
+      "vehicleType": {
+        "scooter": "Scooter",
+        "bike": "Bike",
+        "ebike": "E-bike"
+      }
+    }
+  },
+
+  "itineraries": {
+    "title": "My Itineraries",
+    "signInPrompt": {
+      "title": "Sign in to see your saved trips",
+      "hint": "Anyone can plan a trip — signing in just lets you save and revisit them later.",
+      "notConfigured": "Sign-in is not configured in this environment."
+    },
+    "empty": {
+      "title": "No saved trips yet",
+      "hint": "Build a trip in the planner, then tap the bookmark icon to save it here."
+    },
+    "loadFailed": "Could not load your itineraries.",
+    "upcoming": "Upcoming",
+    "past": "Past",
+    "allTag": "All",
+    "noDate": "No date set",
+    "stops_one": "{{count}} stop",
+    "stops_other": "{{count}} stops",
+    "actions": {
+      "open": "Open {{name}}",
+      "pin": "Pin",
+      "unpin": "Unpin",
+      "rename": "Rename",
+      "editTags": "Edit tags",
+      "delete": "Delete"
+    },
+    "prompts": {
+      "renameTitle": "Rename this trip",
+      "tagsTitle": "Tags (comma-separated)",
+      "deleteConfirm": "Delete \"{{name}}\"? This can't be undone."
+    },
+    "nativeUnavailable": "My Itineraries is available on the web app for now."
+  },
+
+  "settings": {
+    "title": "Settings",
+    "nativeUnavailable": "Settings is available on the web app for now.",
+    "signInPrompt": {
+      "title": "Sign in to manage your account",
+      "hint": "Settings are only available once you're signed in."
+    },
+    "account": {
+      "sectionTitle": "Account",
+      "editName": "Edit display name",
+      "saveName": "Save name",
+      "nameSaveFailed": "Could not save name"
+    },
+    "language": {
+      "sectionTitle": "Language",
+      "hint": "Changes the app's language immediately.",
+      "saveFailed": "Could not save language preference"
+    },
+    "travelPreferences": {
+      "sectionTitle": "Travel preferences",
+      "hint": "Default ways you're open to traveling — pre-fills a new trip's onboarding.",
+      "saving": "Saving…",
+      "saveFailed": "Could not save preferences"
+    },
+    "dataPrivacy": {
+      "sectionTitle": "Data & privacy",
+      "manageItineraries": "Manage saved itineraries",
+      "privacyPolicy": "Privacy Policy",
+      "termsOfService": "Terms of Service"
+    },
+    "dangerZone": {
+      "sectionTitle": "Danger zone",
+      "deleteAccount": "Delete account",
+      "deleteWarning": "This permanently deletes your account and every saved itinerary. This can't be undone. Type DELETE to confirm.",
+      "deleteConfirmPlaceholder": "DELETE",
+      "deletePermanently": "Permanently delete",
+      "deleteFailed": "Could not delete account — please try again."
+    }
+  },
+
+  "account": {
+    "menu": {
+      "accountMenu": "Account menu"
+    }
+  },
+
+  "venueDetail": {
+    "loading": "Loading venue details…",
+    "live": {
+      "checking": "Checking live scooters/bikes…",
+      "staticOnly": "Static zones only — live feed unavailable",
+      "nearbyCount_one": "{{count}} scooter/bike nearby now",
+      "nearbyCount_other": "{{count}} scooters/bikes nearby now",
+      "none": "No live scooters/bikes nearby right now"
+    },
+    "heroLabel": "HOW TO GET THERE FOR THE GAMES",
+    "arrive": "Arrive {{range}}",
+    "arriveRange": {
+      "minMax": "{{min}}–{{max}} hrs before",
+      "minOnly": "{{min}}+ hrs before",
+      "maxOnly": "up to {{max}} hrs before"
+    },
+    "sections": {
+      "transit": "TRANSIT",
+      "dropoffAccessibility": "DROP-OFF & ACCESSIBILITY"
+    },
+    "parking": {
+      "collapseTitle": "Parking (normal days only — closed to spectators during LA28)",
+      "lot": "Lot",
+      "lots_one": "{{count}} lot",
+      "lots_other": "{{count}} lots"
+    },
+    "moreDetail": "More detail",
+    "walkTime": "{{min}} min walk",
+    "transfer": "Transfer",
+    "busLines": "Bus lines",
+    "rideshare": {
+      "pickup": "Rideshare pickup",
+      "postEventDelay": "Post-event delay",
+      "accessibleZone": "Accessible zone",
+      "dropoff": "Drop-off"
+    },
+    "tdm": {
+      "note": "TDM note",
+      "arrivalNote": "Arrival note",
+      "busyEntry": "Busy entry roads",
+      "busyExit": "Busy exit roads"
+    },
+    "viewRouteOptions": "View route options",
+    "closeVenueDetails": "Close venue details",
+    "venue": "Venue",
+    "loadFailed": "Could not load venue",
+    "liveFeedUnavailable": "Live feed unavailable"
+  },
+
+  "comparison": {
+    "modalTitle": "Getting There",
+    "emptyState": "Add at least 2 venues to compare routes.",
+    "travelOptions": "Travel Options",
+    "modes": {
+      "transit": "Transit",
+      "walk": "Walk",
+      "bike": "Bike",
+      "drive": "Drive"
+    },
+    "badges": {
+      "recommended": "Recommended",
+      "discouraged": "Discouraged"
+    },
+    "noRouteFound": "No route found",
+    "live": {
+      "running_one": "Live · {{count}} vehicle running now",
+      "running_other": "Live · {{count}} vehicles running now",
+      "none": "No live vehicles on this line right now"
+    },
+    "discouragedNote": "Venue parking is closed to spectators during LA28 Games. Driving is not the recommended option.",
+    "footer": "Times are estimates under normal conditions. Expect higher demand during LA28 Games. Always check Metro and event-day shuttle schedules."
+  },
+
+  "venueData": {
+    "sportUse": {
+      "1": "Opening/Closing Ceremony, Athletics",
+      "2": "Football",
+      "3": "Baseball",
+      "4": "Basketball, Boxing",
+      "5": "Gymnastics",
+      "6": "Football (Soccer)"
+    },
+    "terminalInfo": {
+      "LAX": "Terminals 1–8 + Tom Bradley International",
+      "BUR": "Single terminal",
+      "LGB": "Terminal A",
+      "ONT": "Terminals 2 & 4",
+      "VNY": "Private & charter aviation"
+    }
+  },
+
+  "search": {
+    "placeholder": "Search venues or airports…",
+    "clear": "Clear search",
+    "addItem": "Add {{name}}",
+    "noResults": "No matches — try a different name."
+  },
+
+  "saveDialog": {
+    "title": "Save this trip",
+    "nameLabel": "Name",
+    "namePlaceholder": "e.g. Opening Weekend",
+    "dateLabel": "Trip date (optional)",
+    "dateFormatHint": "Use the format YYYY-MM-DD.",
+    "tagsLabel": "Tags (optional, comma-separated)",
+    "tagsPlaceholder": "e.g. Family, Opening Weekend"
+  }
+}

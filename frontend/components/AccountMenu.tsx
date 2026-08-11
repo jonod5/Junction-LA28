@@ -7,6 +7,7 @@
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { colors, radius, shadow, spacing } from '@/constants/theme';
@@ -22,6 +23,7 @@ function initialsFrom(name: string | undefined, email: string | undefined): stri
 export function AccountMenu() {
   const { user, account, loading, isConfigured, signInWithGoogle, signOut } = useAuth();
   const router = useRouter();
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
 
   // No Supabase project configured — there's nothing this menu can do, so
@@ -34,11 +36,11 @@ export function AccountMenu() {
         <Pressable
           onPress={() => signInWithGoogle()}
           accessibilityRole="button"
-          accessibilityLabel="Sign in"
+          accessibilityLabel={t('common.signIn')}
           style={styles.signInBtn}
         >
           <Feather name="user" size={13} color={colors.primary} />
-          <Text style={styles.signInText}>Sign in</Text>
+          <Text style={styles.signInText}>{t('common.signIn')}</Text>
         </Pressable>
       </View>
     );
@@ -59,7 +61,7 @@ export function AccountMenu() {
       <Pressable
         onPress={() => setOpen((v) => !v)}
         accessibilityRole="button"
-        accessibilityLabel="Account menu"
+        accessibilityLabel={t('account.menu.accountMenu')}
         style={styles.avatarBtn}
       >
         {avatarUrl ? (
@@ -95,7 +97,7 @@ export function AccountMenu() {
               style={styles.menuItem}
             >
               <Feather name="bookmark" size={14} color={colors.foreground} />
-              <Text style={styles.menuItemText}>My Itineraries</Text>
+              <Text style={styles.menuItemText}>{t('planner.myItineraries')}</Text>
             </Pressable>
             <Pressable
               onPress={() => { setOpen(false); router.push('/settings'); }}
@@ -103,7 +105,7 @@ export function AccountMenu() {
               style={styles.menuItem}
             >
               <Feather name="settings" size={14} color={colors.foreground} />
-              <Text style={styles.menuItemText}>Settings</Text>
+              <Text style={styles.menuItemText}>{t('settings.title')}</Text>
             </Pressable>
             <View style={styles.menuDivider} />
             <Pressable
@@ -112,7 +114,7 @@ export function AccountMenu() {
               style={styles.menuItem}
             >
               <Feather name="log-out" size={14} color={colors.destructive} />
-              <Text style={[styles.menuItemText, { color: colors.destructive }]}>Sign out</Text>
+              <Text style={[styles.menuItemText, { color: colors.destructive }]}>{t('common.signOut')}</Text>
             </Pressable>
           </View>
         </>

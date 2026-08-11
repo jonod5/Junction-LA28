@@ -1,5 +1,7 @@
 import { Feather } from '@expo/vector-icons';
+import type { TFunction } from 'i18next';
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { colors, radius, spacing } from '@/constants/theme';
@@ -31,37 +33,38 @@ interface Props {
  * component never renders a source/citation string.
  */
 export function VenueDetailPanel({ venue, loading, error, liveCount, liveLoading, liveError, onClose, onViewRoutes }: Props) {
+  const { t } = useTranslation();
   const [parkingOpen, setParkingOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
 
   const arrivalMin = venue?.congestion_tdm?.recommended_arrival_hrs_before_min;
   const arrivalMax = venue?.congestion_tdm?.recommended_arrival_hrs_before_max;
   const arrivalText =
-    arrivalMin != null && arrivalMax != null ? `${arrivalMin}–${arrivalMax} hrs before`
-      : arrivalMin != null ? `${arrivalMin}+ hrs before`
-      : arrivalMax != null ? `up to ${arrivalMax} hrs before`
+    arrivalMin != null && arrivalMax != null ? t('venueDetail.arriveRange.minMax', { min: arrivalMin, max: arrivalMax })
+      : arrivalMin != null ? t('venueDetail.arriveRange.minOnly', { min: arrivalMin })
+      : arrivalMax != null ? t('venueDetail.arriveRange.maxOnly', { max: arrivalMax })
       : null;
 
   const moreDetailRows: FactRow[] = venue ? [
-    ...splitFacts(venue.congestion_tdm?.general_tdm_notes, 'TDM note'),
-    ...splitFacts(venue.congestion_tdm?.arrival_notes, 'Arrival note'),
-    ...splitFacts(venue.congestion_tdm?.high_congestion_entry_roads, 'Busy entry roads'),
-    ...splitFacts(venue.congestion_tdm?.known_congestion_exit_roads, 'Busy exit roads'),
-    ...venue.transit_accesses.flatMap((t) => splitFacts(t.transit_notes)),
+    ...splitFacts(venue.congestion_tdm?.general_tdm_notes, t('venueDetail.tdm.note')),
+    ...splitFacts(venue.congestion_tdm?.arrival_notes, t('venueDetail.tdm.arrivalNote')),
+    ...splitFacts(venue.congestion_tdm?.high_congestion_entry_roads, t('venueDetail.tdm.busyEntry')),
+    ...splitFacts(venue.congestion_tdm?.known_congestion_exit_roads, t('venueDetail.tdm.busyExit')),
+    ...venue.transit_accesses.flatMap((ta) => splitFacts(ta.transit_notes)),
   ] : [];
 
   return (
     <div style={PANEL_CSS}>
       <View style={styles.header}>
-        <Text style={styles.venueName} numberOfLines={2}>{venue?.name ?? 'Venue'}</Text>
-        <Pressable onPress={onClose} hitSlop={10} accessibilityLabel="Close venue details" accessibilityRole="button">
+        <Text style={styles.venueName} numberOfLines={2}>{venue?.name ?? t('venueDetail.venue')}</Text>
+        <Pressable onPress={onClose} hitSlop={10} accessibilityLabel={t('venueDetail.closeVenueDetails')} accessibilityRole="button">
           <Feather name="x" size={20} color={colors.mutedFg} />
         </Pressable>
       </View>
       {venue?.sport_use && <Text style={styles.sportUse}>{venue.sport_use}</Text>}
 
       {loading || !venue ? (
-        <Text style={styles.hint}>Loading venue details…</Text>
+        <Text style={styles.hint}>{t('venueDetail.loading')}</Text>
       ) : error ? (
         <Text style={styles.errorText}>{error}</Text>
       ) : (
@@ -71,19 +74,19 @@ export function VenueDetailPanel({ venue, loading, error, liveCount, liveLoading
             <Feather name="zap" size={13} color={liveCount ? colors.success : colors.mutedFg} />
             <Text style={styles.liveText}>
               {liveLoading
-                ? 'Checking live scooters/bikes…'
+                ? t('venueDetail.live.checking')
                 : liveError
-                  ? 'Static zones only — live feed unavailable'
+                  ? t('venueDetail.live.staticOnly')
                   : liveCount != null
-                    ? `${liveCount} scooter${liveCount === 1 ? '' : 's'}/bike${liveCount === 1 ? '' : 's'} nearby now`
-                    : 'No live scooters/bikes nearby right now'}
+                    ? t('venueDetail.live.nearbyCount', { count: liveCount })
+                    : t('venueDetail.live.none')}
             </Text>
           </View>
 
           {/* Hero: how to get there for the Games. */}
           {venue.games_time_access_notes && (
             <View style={styles.hero}>
-              <Text style={styles.heroLabel}>HOW TO GET THERE FOR THE GAMES</Text>
+              <Text style={styles.heroLabel}>{t('venueDetail.heroLabel')}</Text>
               <Text style={styles.heroText}>{venue.games_time_access_notes}</Text>
             </View>
           )}
@@ -92,15 +95,15 @@ export function VenueDetailPanel({ venue, loading, error, liveCount, liveLoading
           {arrivalText && (
             <View style={styles.arrivalRow}>
               <Feather name="clock" size={13} color={colors.primary} />
-              <Text style={styles.arrivalText}>Arrive {arrivalText}</Text>
+              <Text style={styles.arrivalText}>{t('venueDetail.arrive', { range: arrivalText })}</Text>
             </View>
           )}
 
           {/* Transit access — scannable chip rows, not paragraphs. */}
           {venue.transit_accesses.length > 0 && (
             <View style={{ gap: spacing.sm }}>
-              <Text style={styles.sectionLabel}>TRANSIT</Text>
-              {venue.transit_accesses.map((t) => <TransitRow key={t.id} transit={t} />)}
+              <Text style={styles.sectionLabel}>{t('venueDetail.sections.transit')}</Text>
+              {venue.transit_accesses.map((ta) => <TransitRow key={ta.id} transit={ta} />)}
             </View>
           )}
 
@@ -112,7 +115,7 @@ export function VenueDetailPanel({ venue, loading, error, liveCount, liveLoading
             <View style={styles.collapseBlock}>
               <Pressable onPress={() => setParkingOpen((v) => !v)} style={styles.collapseHeader} accessibilityRole="button">
                 <Feather name={parkingOpen ? 'chevron-down' : 'chevron-right'} size={14} color={colors.muted} />
-                <Text style={styles.collapseTitle}>Parking (normal days only — closed to spectators during LA28)</Text>
+                <Text style={styles.collapseTitle}>{t('venueDetail.parking.collapseTitle')}</Text>
               </Pressable>
               {parkingOpen && (
                 <View style={{ gap: 6, paddingLeft: spacing.md, paddingTop: 4 }}>
@@ -127,7 +130,7 @@ export function VenueDetailPanel({ venue, loading, error, liveCount, liveLoading
             <View style={styles.collapseBlock}>
               <Pressable onPress={() => setMoreOpen((v) => !v)} style={styles.collapseHeader} accessibilityRole="button">
                 <Feather name={moreOpen ? 'chevron-down' : 'chevron-right'} size={14} color={colors.muted} />
-                <Text style={styles.collapseTitle}>More detail</Text>
+                <Text style={styles.collapseTitle}>{t('venueDetail.moreDetail')}</Text>
               </Pressable>
               {moreOpen && (
                 <View style={{ gap: 6, paddingLeft: spacing.md, paddingTop: 4 }}>
@@ -141,7 +144,7 @@ export function VenueDetailPanel({ venue, loading, error, liveCount, liveLoading
 
       <Pressable onPress={onViewRoutes} accessibilityRole="button" style={({ pressed }) => [styles.actionBtn, pressed && { opacity: 0.85 }]}>
         <Feather name="navigation" size={14} color={colors.onPrimary} />
-        <Text style={styles.actionBtnText}>View route options</Text>
+        <Text style={styles.actionBtnText}>{t('venueDetail.viewRouteOptions')}</Text>
       </Pressable>
     </div>
   );
@@ -177,16 +180,17 @@ function FactList({ rows }: { rows: FactRow[] }) {
 }
 
 function TransitRow({ transit }: { transit: TransitAccess }) {
+  const { t } = useTranslation();
   // nearest_metro_station often just repeats stop_name for rail entries —
   // only show it when it's actually a different (transfer) station.
   const metroDiffers =
     transit.nearest_metro_station && transit.nearest_metro_station !== transit.stop_name;
-  const transferRow = metroDiffers ? factRow('Transfer', transit.nearest_metro_station) : null;
+  const transferRow = metroDiffers ? factRow(t('venueDetail.transfer'), transit.nearest_metro_station) : null;
   const busPills = parseBusLines(transit.bus_lines_serving);
   // Not every venue's bus_lines_serving follows the "Line X (to Dest)"
   // pattern the pills need — fall back to a plain fact row so nothing
   // silently disappears.
-  const busFallback = busPills.length === 0 ? splitFacts(transit.bus_lines_serving, 'Bus lines') : [];
+  const busFallback = busPills.length === 0 ? splitFacts(transit.bus_lines_serving, t('venueDetail.busLines')) : [];
   return (
     <View style={styles.transitBlock}>
       <View style={styles.chipRow}>
@@ -197,7 +201,7 @@ function TransitRow({ transit }: { transit: TransitAccess }) {
         )}
         {transit.stop_name && <Text style={styles.transitStop}>{transit.stop_name}</Text>}
         {transit.walk_time_min != null && (
-          <Text style={styles.transitWalk}>{transit.walk_time_min} min walk</Text>
+          <Text style={styles.transitWalk}>{t('venueDetail.walkTime', { min: transit.walk_time_min })}</Text>
         )}
       </View>
       {transferRow && <FactRowView row={transferRow} />}
@@ -216,16 +220,17 @@ function TransitRow({ transit }: { transit: TransitAccess }) {
 }
 
 function CurbRow({ curb }: { curb: CurbDropoff }) {
+  const { t } = useTranslation();
   const rows: FactRow[] = [
-    ...splitFacts(curb.rideshare_zone_description, 'Rideshare pickup'),
-    ...splitFacts(curb.rideshare_zone_open_window, 'Post-event delay'),
-    ...splitFacts(curb.taxi_accessible_zone, 'Accessible zone'),
-    ...splitFacts(curb.private_vehicle_dropoff, 'Drop-off'),
+    ...splitFacts(curb.rideshare_zone_description, t('venueDetail.rideshare.pickup')),
+    ...splitFacts(curb.rideshare_zone_open_window, t('venueDetail.rideshare.postEventDelay')),
+    ...splitFacts(curb.taxi_accessible_zone, t('venueDetail.rideshare.accessibleZone')),
+    ...splitFacts(curb.private_vehicle_dropoff, t('venueDetail.rideshare.dropoff')),
   ];
   if (rows.length === 0) return null;
   return (
     <View style={{ gap: spacing.xs }}>
-      <Text style={styles.sectionLabel}>DROP-OFF &amp; ACCESSIBILITY</Text>
+      <Text style={styles.sectionLabel}>{t('venueDetail.sections.dropoffAccessibility')}</Text>
       <FactList rows={rows} />
     </View>
   );
@@ -233,15 +238,16 @@ function CurbRow({ curb }: { curb: CurbDropoff }) {
 
 /** Short headline for a multi-lot group: the text before a group label's
  * colon ("Exposition Park: Blue Structure, ...") or a plain lot count. */
-function lotGroupLabel(rawLotName: string | null, count: number): string {
+function lotGroupLabel(rawLotName: string | null, count: number, t: TFunction): string {
   if (rawLotName) {
     const colonIdx = rawLotName.indexOf(':');
     if (colonIdx > -1 && colonIdx < 40) return rawLotName.slice(0, colonIdx).trim();
   }
-  return `${count} lots`;
+  return t('venueDetail.parking.lots', { count });
 }
 
 function ParkingRow({ parking }: { parking: ParkingOption }) {
+  const { t } = useTranslation();
   const [lotsOpen, setLotsOpen] = useState(false);
   const hasPrice = parking.price_min != null || parking.price_max != null;
   const priceText = hasPrice
@@ -257,13 +263,15 @@ function ParkingRow({ parking }: { parking: ParkingOption }) {
   return (
     <View style={styles.parkingBlock}>
       <View style={styles.parkingRow}>
-        <Text style={styles.parkingName}>{isGroup ? lotGroupLabel(parking.lot_name, lots.length) : (parking.lot_name ?? 'Lot')}</Text>
+        <Text style={styles.parkingName}>
+          {isGroup ? lotGroupLabel(parking.lot_name, lots.length, t) : (parking.lot_name ?? t('venueDetail.parking.lot'))}
+        </Text>
         {priceText && <Text style={styles.parkingPrice}>{priceText}</Text>}
       </View>
       {isGroup && (
         <Pressable onPress={() => setLotsOpen((v) => !v)} style={styles.lotsToggle} accessibilityRole="button">
           <Feather name={lotsOpen ? 'chevron-down' : 'chevron-right'} size={12} color={colors.muted} />
-          <Text style={styles.lotsToggleText}>{lots.length} lots</Text>
+          <Text style={styles.lotsToggleText}>{t('venueDetail.parking.lots', { count: lots.length })}</Text>
         </Pressable>
       )}
       {isGroup && lotsOpen && (

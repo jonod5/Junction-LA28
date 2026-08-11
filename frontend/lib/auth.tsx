@@ -5,7 +5,12 @@ import type { Session, User } from '@supabase/supabase-js';
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 
 import { api, type Account } from './api';
+import i18next, { changeLanguage, SUPPORTED_LANGUAGES, type SupportedLanguage } from './i18n';
 import { isSupabaseConfigured, supabase } from './supabase';
+
+function isSupportedLanguage(value: unknown): value is SupportedLanguage {
+  return typeof value === 'string' && (SUPPORTED_LANGUAGES as readonly string[]).includes(value);
+}
 
 interface AuthContextValue {
   session: Session | null;
@@ -53,6 +58,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
+
+  // A signed-in user's saved language preference wins once it's loaded —
+  // i18next already started from the local cache/device language at import
+  // time (see lib/i18n.ts), this just corrects it a moment later if the
+  // account says otherwise. Also re-syncs the local cache, so the next
+  // anonymous-until-loaded boot on this device starts in the right language
+  // immediately.
+  useEffect(() => {
+    const lang = account?.preferences?.language;
+    if (isSupportedLanguage(lang) && lang !== i18next.language) {
+      changeLanguage(lang);
+    }
+  }, [account]);
 
   useEffect(() => {
     if (!isSupabaseConfigured) return;

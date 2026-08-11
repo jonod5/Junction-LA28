@@ -13,11 +13,15 @@ import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
 
 import { AccountMenu } from '@/components/AccountMenu';
 import { useColorScheme } from '@/components/useColorScheme';
+// Side-effect import — initializes i18next before anything calls
+// useTranslation(). Must run before RootLayoutNav's first render.
+import '@/lib/i18n';
 import { AuthProvider } from '@/lib/auth';
 import { TripProvider } from '@/lib/store';
 
@@ -54,6 +58,7 @@ export default function RootLayout() {
 
 function RootLayoutNav() {
   const colorScheme = useColorScheme();
+  const { t } = useTranslation();
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -64,10 +69,10 @@ function RootLayoutNav() {
               <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
               <Stack.Screen
                 name="comparison"
-                options={{ presentation: 'modal', title: 'Getting There' }}
+                options={{ presentation: 'modal', title: t('comparison.modalTitle') }}
               />
-              <Stack.Screen name="itineraries" options={{ title: 'My Itineraries' }} />
-              <Stack.Screen name="settings" options={{ title: 'Settings' }} />
+              <Stack.Screen name="itineraries" options={{ title: t('itineraries.title') }} />
+              <Stack.Screen name="settings" options={{ title: t('settings.title') }} />
             </Stack>
             <AccountMenu />
           </ThemeProvider>

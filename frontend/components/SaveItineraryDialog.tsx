@@ -1,5 +1,6 @@
 import { Feather } from '@expo/vector-icons';
 import React, { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { colors, radius, shadow, spacing } from '@/constants/theme';
@@ -23,6 +24,7 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 export function SaveItineraryDialog({
   visible, initialName, initialTripDate, initialTags, saving, errorText, onCancel, onSave,
 }: Props) {
+  const { t } = useTranslation();
   const [name, setName] = useState(initialName);
   const [tripDate, setTripDate] = useState(initialTripDate ?? '');
   const [tagsText, setTagsText] = useState(initialTags.join(', '));
@@ -50,19 +52,19 @@ export function SaveItineraryDialog({
   return (
     <View style={styles.backdrop}>
       <View style={styles.card}>
-        <Text style={styles.title}>Save this trip</Text>
+        <Text style={styles.title}>{t('saveDialog.title')}</Text>
 
-        <Text style={styles.label}>Name</Text>
+        <Text style={styles.label}>{t('saveDialog.nameLabel')}</Text>
         <TextInput
           value={name}
           onChangeText={setName}
-          placeholder="e.g. Opening Weekend"
+          placeholder={t('saveDialog.namePlaceholder')}
           placeholderTextColor={colors.mutedFg}
           style={styles.input}
-          accessibilityLabel="Itinerary name"
+          accessibilityLabel={t('saveDialog.nameLabel')}
         />
 
-        <Text style={styles.label}>Trip date (optional)</Text>
+        <Text style={styles.label}>{t('saveDialog.dateLabel')}</Text>
         {Platform.OS === 'web' ? (
           // Native browser date picker — a real calendar dropdown, and
           // e.target.value is already YYYY-MM-DD so no format validation
@@ -71,7 +73,7 @@ export function SaveItineraryDialog({
             type="date"
             value={tripDate}
             onChange={(e) => setTripDate(e.target.value)}
-            aria-label="Trip date"
+            aria-label={t('saveDialog.dateLabel')}
             style={webDateInputStyle}
           />
         ) : (
@@ -81,26 +83,26 @@ export function SaveItineraryDialog({
             placeholder="YYYY-MM-DD"
             placeholderTextColor={colors.mutedFg}
             style={styles.input}
-            accessibilityLabel="Trip date"
+            accessibilityLabel={t('saveDialog.dateLabel')}
           />
         )}
-        {!dateValid && <Text style={styles.errorText}>Use the format YYYY-MM-DD.</Text>}
+        {!dateValid && <Text style={styles.errorText}>{t('saveDialog.dateFormatHint')}</Text>}
 
-        <Text style={styles.label}>Tags (optional, comma-separated)</Text>
+        <Text style={styles.label}>{t('saveDialog.tagsLabel')}</Text>
         <TextInput
           value={tagsText}
           onChangeText={setTagsText}
-          placeholder="e.g. Family, Opening Weekend"
+          placeholder={t('saveDialog.tagsPlaceholder')}
           placeholderTextColor={colors.mutedFg}
           style={styles.input}
-          accessibilityLabel="Tags"
+          accessibilityLabel={t('saveDialog.tagsLabel')}
         />
 
         {errorText && <Text style={styles.errorText}>{errorText}</Text>}
 
         <View style={styles.actions}>
           <Pressable onPress={onCancel} disabled={saving} style={styles.secondaryBtn}>
-            <Text style={styles.secondaryBtnText}>Cancel</Text>
+            <Text style={styles.secondaryBtnText}>{t('common.cancel')}</Text>
           </Pressable>
           <Pressable
             onPress={handleSave}
@@ -113,7 +115,7 @@ export function SaveItineraryDialog({
             ) : (
               <>
                 <Feather name="bookmark" size={14} color={colors.onPrimary} />
-                <Text style={styles.primaryBtnText}>Save</Text>
+                <Text style={styles.primaryBtnText}>{t('common.save')}</Text>
               </>
             )}
           </Pressable>

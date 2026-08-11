@@ -1,5 +1,6 @@
 import { Feather } from '@expo/vector-icons';
 import React, { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { AIRPORTS, AirportStub } from '@/constants/airports';
@@ -16,7 +17,8 @@ interface Props {
 }
 
 /** Type-ahead search across the 6 venues + 5 airports (FR-U2). */
-export function StopSearch({ addedNames, onSelect, placeholder = 'Search venues or airports…' }: Props) {
+export function StopSearch({ addedNames, onSelect, placeholder }: Props) {
+  const { t } = useTranslation();
   const [query, setQuery] = useState('');
 
   const results = useMemo<SearchItem[]>(() => {
@@ -37,14 +39,14 @@ export function StopSearch({ addedNames, onSelect, placeholder = 'Search venues 
         <TextInput
           value={query}
           onChangeText={setQuery}
-          placeholder={placeholder}
+          placeholder={placeholder ?? t('search.placeholder')}
           placeholderTextColor={colors.mutedFg}
           style={styles.input}
-          accessibilityLabel="Search venues or airports"
+          accessibilityLabel={t('search.placeholder')}
           returnKeyType="search"
         />
         {query.length > 0 && (
-          <Pressable onPress={() => setQuery('')} hitSlop={8} accessibilityLabel="Clear search">
+          <Pressable onPress={() => setQuery('')} hitSlop={8} accessibilityLabel={t('search.clear')}>
             <Feather name="x" size={15} color={colors.mutedFg} />
           </Pressable>
         )}
@@ -52,7 +54,7 @@ export function StopSearch({ addedNames, onSelect, placeholder = 'Search venues 
 
       <ScrollView style={styles.list} nestedScrollEnabled showsVerticalScrollIndicator={false}>
         {results.length === 0 && (
-          <Text style={styles.empty}>No matches — try a different name.</Text>
+          <Text style={styles.empty}>{t('search.noResults')}</Text>
         )}
         {results.map((item) => {
           const isVenue = item.kind === 'venue';
@@ -61,7 +63,7 @@ export function StopSearch({ addedNames, onSelect, placeholder = 'Search venues 
               key={isVenue ? `v${item.id}` : `a${item.code}`}
               onPress={() => onSelect(item)}
               accessibilityRole="button"
-              accessibilityLabel={`Add ${item.name}`}
+              accessibilityLabel={t('search.addItem', { name: item.name })}
               style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
             >
               <View style={[styles.badge, { backgroundColor: isVenue ? colors.primary : colors.secondary }]}>
@@ -70,7 +72,9 @@ export function StopSearch({ addedNames, onSelect, placeholder = 'Search venues 
               <View style={styles.rowText}>
                 <Text style={styles.name} numberOfLines={1}>{item.name}</Text>
                 <Text style={styles.sub} numberOfLines={1}>
-                  {isVenue ? item.sport_use : `${item.code} · ${item.terminal_info}`}
+                  {isVenue
+                    ? t(`venueData.sportUse.${item.id}`)
+                    : `${item.code} · ${t(`venueData.terminalInfo.${item.code}`)}`}
                 </Text>
               </View>
               <Feather name="plus-circle" size={16} color={colors.mutedFg} />
