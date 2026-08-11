@@ -23,18 +23,30 @@ Design choices:
   API's output only.  The underlying rows (and each row's separate `source` /
   `verified_at` columns) are untouched — provenance stays queryable in the
   data layer, it just never renders.
+- Translation (v1.5 Phase 3): an optional `language` query param selects a
+  translated value for each *prose* field from venue_translation, falling
+  back to the stripped English value whenever a translation is missing
+  (untranslated language, or that specific field never got one). Identifiers
+  — venue name, zone, address, lot names, transit line/stop/station names,
+  bus_lines_serving — are deliberately NEVER looked up in the translation
+  table; they render in their original form in every language (see
+  frontend/locales/README.md's "don't translate identifiers" rule, applied
+  here to dynamic DB content instead of static UI strings). Translations are
+  keyed on the *stripped* English text's meaning, not the raw DB value —
+  they were written against what _strip_provenance() actually outputs.
 """
 
 import logging
 import re
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models.venue import (
     GAMES_TIME_PARKING_POLICY,
     Venue,
+    VenueTranslation,
 )
 from app.schemas import (
     CongestionOut,
@@ -46,6 +58,35 @@ from app.schemas import (
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/venues", tags=["venues"])
+
+# Keep in sync with frontend/lib/i18n.ts's SUPPORTED_LANGUAGES. "en" is
+# deliberately excluded — English never has (or needs) a translation row.
+_TRANSLATABLE_LANGUAGES = frozenset({"es", "fr", "zh-Hans"})
+
+
+def _normalize_language(language: str | None) -> str | None:
+    """None means "render English" — the caller skips translation lookup entirely."""
+    return language if language in _TRANSLATABLE_LANGUAGES else None
+
+
+class _Translator:
+    """Looks up a translated value for one venue's fields, falling back to
+    the (already provenance-stripped) English value when none exists."""
+
+    def __init__(self, db: Session, venue_id: int, language: str | None):
+        self._by_key: dict[tuple[str, int, str], str] = {}
+        if language:
+            rows = (
+                db.query(VenueTranslation)
+                .filter(VenueTranslation.venue_id == venue_id, VenueTranslation.language == language)
+                .all()
+            )
+            self._by_key = {(r.entity_type, r.entity_id, r.field): r.value for r in rows}
+
+    def __call__(self, entity_type: str, entity_id: int, field: str, english: str | None) -> str | None:
+        if english is None:
+            return None
+        return self._by_key.get((entity_type, entity_id, field), english)
 
 
 def _float(val) -> float | None:
@@ -105,7 +146,11 @@ def _strip_provenance(text: str | None) -> str | None:
 
 
 @router.get("/{venue_id}", response_model=VenueDetailOut)
-def get_venue(venue_id: int, db: Session = Depends(get_db)):
+def get_venue(
+    venue_id: int,
+    language: str | None = Query(None, description="App locale code (es/fr/zh-Hans); omit or 'en' for English"),
+    db: Session = Depends(get_db),
+):
     """
     Return full venue detail: identity, parking, transit, curb, congestion,
     games_time_access_notes, and the program-level parking policy constant.
@@ -114,8 +159,12 @@ def get_venue(venue_id: int, db: Session = Depends(get_db)):
     if not venue:
         raise HTTPException(status_code=404, detail=f"Venue {venue_id} not found")
 
+    tr = _Translator(db, venue_id, _normalize_language(language))
+
     # Build nested schemas from the ORM relationships.  Every free-text field
-    # goes through _strip_provenance() — see module docstring.
+    # goes through _strip_provenance() — see module docstring. Prose fields
+    # additionally go through tr() for a translated value; identifiers (lot
+    # names, line/stop/station names, bus_lines_serving) never do.
     parking = [
         ParkingOut(
             id=p.id,
@@ -123,12 +172,12 @@ def get_venue(venue_id: int, db: Session = Depends(get_db)):
             is_official=p.is_official,
             price_min=_float(p.price_min),
             price_max=_float(p.price_max),
-            price_notes=_strip_provenance(p.price_notes),
-            pricing_basis=_strip_provenance(p.pricing_basis),
+            price_notes=tr("parking_option", p.id, "price_notes", _strip_provenance(p.price_notes)),
+            pricing_basis=tr("parking_option", p.id, "pricing_basis", _strip_provenance(p.pricing_basis)),
             has_surge_pricing=p.has_surge_pricing,
-            surge_notes=_strip_provenance(p.surge_notes),
+            surge_notes=tr("parking_option", p.id, "surge_notes", _strip_provenance(p.surge_notes)),
             is_closest_to_entrance=p.is_closest_to_entrance,
-            notes=_strip_provenance(p.notes),
+            notes=tr("parking_option", p.id, "notes", _strip_provenance(p.notes)),
         )
         for p in venue.parking_options
     ]
@@ -143,8 +192,10 @@ def get_venue(venue_id: int, db: Session = Depends(get_db)):
             nearest_metro_station=_strip_provenance(t.nearest_metro_station),
             bus_lines_serving=_strip_provenance(t.bus_lines_serving),
             bike_lane_nearby=t.bike_lane_nearby,
-            gbfs_dock_description=_strip_provenance(t.gbfs_dock_description),
-            transit_notes=_strip_provenance(t.transit_notes),
+            gbfs_dock_description=tr(
+                "transit_access", t.id, "gbfs_dock_description", _strip_provenance(t.gbfs_dock_description),
+            ),
+            transit_notes=tr("transit_access", t.id, "transit_notes", _strip_provenance(t.transit_notes)),
         )
         for t in venue.transit_accesses
     ]
@@ -152,12 +203,24 @@ def get_venue(venue_id: int, db: Session = Depends(get_db)):
     curb = [
         CurbOut(
             id=c.id,
-            rideshare_zone_description=_strip_provenance(c.rideshare_zone_description),
-            rideshare_zone_open_window=_strip_provenance(c.rideshare_zone_open_window),
-            taxi_accessible_zone=_strip_provenance(c.taxi_accessible_zone),
-            private_vehicle_dropoff=_strip_provenance(c.private_vehicle_dropoff),
-            no_stop_zones=_strip_provenance(c.no_stop_zones),
-            curbside_restrictions=_strip_provenance(c.curbside_restrictions),
+            rideshare_zone_description=tr(
+                "curb_dropoff", c.id, "rideshare_zone_description",
+                _strip_provenance(c.rideshare_zone_description),
+            ),
+            rideshare_zone_open_window=tr(
+                "curb_dropoff", c.id, "rideshare_zone_open_window",
+                _strip_provenance(c.rideshare_zone_open_window),
+            ),
+            taxi_accessible_zone=tr(
+                "curb_dropoff", c.id, "taxi_accessible_zone", _strip_provenance(c.taxi_accessible_zone),
+            ),
+            private_vehicle_dropoff=tr(
+                "curb_dropoff", c.id, "private_vehicle_dropoff", _strip_provenance(c.private_vehicle_dropoff),
+            ),
+            no_stop_zones=tr("curb_dropoff", c.id, "no_stop_zones", _strip_provenance(c.no_stop_zones)),
+            curbside_restrictions=tr(
+                "curb_dropoff", c.id, "curbside_restrictions", _strip_provenance(c.curbside_restrictions),
+            ),
         )
         for c in venue.curb_dropoffs
     ]
@@ -169,10 +232,18 @@ def get_venue(venue_id: int, db: Session = Depends(get_db)):
             id=td.id,
             recommended_arrival_hrs_before_min=_float(td.recommended_arrival_hrs_before_min),
             recommended_arrival_hrs_before_max=_float(td.recommended_arrival_hrs_before_max),
-            arrival_notes=_strip_provenance(td.arrival_notes),
-            high_congestion_entry_roads=_strip_provenance(td.high_congestion_entry_roads),
-            known_congestion_exit_roads=_strip_provenance(td.known_congestion_exit_roads),
-            general_tdm_notes=_strip_provenance(td.general_tdm_notes),
+            arrival_notes=tr("congestion_tdm", td.id, "arrival_notes", _strip_provenance(td.arrival_notes)),
+            high_congestion_entry_roads=tr(
+                "congestion_tdm", td.id, "high_congestion_entry_roads",
+                _strip_provenance(td.high_congestion_entry_roads),
+            ),
+            known_congestion_exit_roads=tr(
+                "congestion_tdm", td.id, "known_congestion_exit_roads",
+                _strip_provenance(td.known_congestion_exit_roads),
+            ),
+            general_tdm_notes=tr(
+                "congestion_tdm", td.id, "general_tdm_notes", _strip_provenance(td.general_tdm_notes),
+            ),
         )
 
     return VenueDetailOut(
@@ -185,8 +256,10 @@ def get_venue(venue_id: int, db: Session = Depends(get_db)):
         lng=_float(venue.lng),
         total_spaces=venue.total_spaces,
         total_lots=venue.total_lots,
-        capacity_text=_strip_provenance(venue.capacity_text),
-        games_time_access_notes=_strip_provenance(venue.games_time_access_notes),
+        capacity_text=tr("venue", venue.id, "capacity_text", _strip_provenance(venue.capacity_text)),
+        games_time_access_notes=tr(
+            "venue", venue.id, "games_time_access_notes", _strip_provenance(venue.games_time_access_notes),
+        ),
         # Inject program-level constant — not stored per-venue in the DB.
         games_time_parking_policy=GAMES_TIME_PARKING_POLICY,
         parking_options=parking,

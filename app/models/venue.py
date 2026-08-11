@@ -22,6 +22,7 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -213,3 +214,46 @@ class VenueSource(Base):
     verified_at: Mapped[date | None] = mapped_column(Date)
 
     venue: Mapped["Venue"] = relationship(back_populates="sources")
+
+
+class VenueTranslation(Base):
+    """
+    One row per (venue, entity, field, language) — a translated value for a
+    single free-text column on Venue/ParkingOption/CurbDropoff/TransitAccess/
+    CongestionTdm.  English itself is never stored here: it stays the system
+    of record on the source tables above, and this table only holds what a
+    translation *adds* (es/fr/zh-Hans), so the API can fall back to English
+    whenever a row is missing.
+
+    entity_type names the source table ("venue", "parking_option",
+    "curb_dropoff", "transit_access", "congestion_tdm"); entity_id is that
+    row's own primary key (for entity_type="venue", entity_id == venue_id —
+    kept non-null on every row so the uniqueness constraint below actually
+    holds; NULL != NULL in SQL and would otherwise let venue-level fields
+    collect duplicate rows per language).
+
+    `reviewed` defaults False: every row this app populates is a first-pass
+    (machine or non-native) translation until a native speaker signs off —
+    same "no unverified data shown as fact" discipline as the UI strings in
+    frontend/locales/README.md. Query `reviewed=False` as the review queue.
+    """
+
+    __tablename__ = "venue_translation"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    venue_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("venue.id", ondelete="CASCADE"), nullable=False
+    )
+    entity_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    entity_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    field: Mapped[str] = mapped_column(String(50), nullable=False)
+    language: Mapped[str] = mapped_column(String(10), nullable=False)
+    value: Mapped[str] = mapped_column(Text, nullable=False)
+    reviewed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "entity_type", "entity_id", "field", "language",
+            name="uq_venue_translation_key",
+        ),
+    )

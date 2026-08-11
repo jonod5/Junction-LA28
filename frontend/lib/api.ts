@@ -387,7 +387,8 @@ export const api = {
     },
   ) => request<Leg>(`/api/trips/${tripId}/legs`, { method: 'PUT', body: JSON.stringify(body) }),
 
-  getVenue: (id: number) => request<VenueDetail>(`/api/venues/${id}`),
+  getVenue: (id: number, language?: string) =>
+    request<VenueDetail>(`/api/venues/${id}${language ? `?language=${encodeURIComponent(language)}` : ''}`),
 
   getMicromobility: (lat: number, lng: number, radiusM = 800) =>
     request<MicromobilityResult>(

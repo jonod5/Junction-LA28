@@ -318,7 +318,7 @@ export default function UnifiedPlannerScreen() {
   } = useTrip();
   const { user, account, loading: authLoading, isConfigured: authConfigured, signInWithGoogle } = useAuth();
   const router = useRouter();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
@@ -754,7 +754,7 @@ export default function UnifiedPlannerScreen() {
     let cancelled = false;
     setVenueDetailLoading(true);
     setVenueDetailError(null);
-    api.getVenue(openVenue.id)
+    api.getVenue(openVenue.id, i18n.language)
       .then((v) => { if (!cancelled) setVenueDetail(v); })
       .catch((e: unknown) => { if (!cancelled) setVenueDetailError(e instanceof Error ? e.message : t('venueDetail.loadFailed')); })
       .finally(() => { if (!cancelled) setVenueDetailLoading(false); });
@@ -767,7 +767,9 @@ export default function UnifiedPlannerScreen() {
       .finally(() => { if (!cancelled) setVenueLiveLoading(false); });
 
     return () => { cancelled = true; };
-  }, [openVenue]);
+    // i18n.language re-fetches the panel's venue detail (translated prose)
+    // when the user switches languages while it's open.
+  }, [openVenue, i18n.language]);
 
   // Map reacts while the panel is open: fit to the venue + its nearby transit
   // points, biased away from the right panel; return to the itinerary view
