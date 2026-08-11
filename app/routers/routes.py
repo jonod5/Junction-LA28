@@ -31,6 +31,10 @@ class RouteOptimizeRequest(BaseModel):
     preferences: list[str] | None = None
     # Unix seconds; honoured for transit backbones (cache-bucketed to 5 min).
     departure_time: int | None = None
+    # App locale code (see frontend/lib/i18n.ts); forwarded to Google so
+    # turn-by-turn steps come back in the caller's language. Unsupported or
+    # missing falls back to English (app.routers.directions._normalize_language).
+    language: str | None = None
 
 
 @router.post("/optimize")
@@ -42,6 +46,7 @@ def optimize_routes(body: RouteOptimizeRequest):
             destination=(body.destination.lat, body.destination.lng),
             preferences=body.preferences,
             departure_time=body.departure_time,
+            language=body.language,
         )
     except DirectionsError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc

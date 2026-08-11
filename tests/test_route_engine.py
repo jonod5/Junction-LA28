@@ -59,7 +59,7 @@ def patch_engine(monkeypatch, directions=None, types=None):
     directions = DEFAULT_DIRECTIONS if directions is None else directions
     micro_types = {"scooter", "bike"} if types is None else types
 
-    def fake_fetch(origin, destination, mode, departure_time=None):
+    def fake_fetch(origin, destination, mode, departure_time=None, language=None):
         return directions.get(mode)
 
     monkeypatch.setattr(route_engine, "_api_key", lambda: "TEST_KEY")
@@ -223,8 +223,8 @@ def test_metro_micro_only_inside_a_shared_zone(monkeypatch):
     patch_engine(monkeypatch)
     # Gating happens at the builder: proposed only when both endpoints share a
     # zone.  (Whether it then survives ranking is a separate dominance question.)
-    assert route_engine._build_metro_micro_candidate(ORIGIN, DEST) is None
-    inzone = route_engine._build_metro_micro_candidate(ZONE_A, ZONE_B)
+    assert route_engine._build_metro_micro_candidate(ORIGIN, DEST, "en") is None
+    inzone = route_engine._build_metro_micro_candidate(ZONE_A, ZONE_B, "en")
     assert inzone is not None
     assert inzone["modes"] == ["metro_micro"]
 

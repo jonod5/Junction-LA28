@@ -48,6 +48,20 @@ class TravelMode(StrEnum):
     bicycling = "bicycling"
 
 
+# App locale codes (frontend/lib/i18n.ts SUPPORTED_LANGUAGES) → Google
+# Directions `language` codes. Google uses zh-CN for Simplified Chinese, not
+# our app's zh-Hans — everything else matches 1:1. Unknown/missing codes fall
+# back to English.
+_GOOGLE_LANGUAGE = {"en": "en", "es": "es", "fr": "fr", "zh-Hans": "zh-CN"}
+DEFAULT_LANGUAGE = "en"
+
+
+def _normalize_language(language: str | None) -> str:
+    """App locale code if supported, else English — never forward an
+    unrecognized code to the cache key or Google."""
+    return language if language in _GOOGLE_LANGUAGE else DEFAULT_LANGUAGE
+
+
 # Departure-time bucket for transit cache keys.  Transit routes DO depend on
 # when you leave, so the cache key must include it — otherwise the engine would
 # silently serve a route computed for a different time.  Bucketing to 5-minute
@@ -68,7 +82,9 @@ def _api_key() -> str | None:
     return os.environ.get("GOOGLE_MAPS_KEY") or os.environ.get("GOOGLE_MAPS_API_KEY")
 
 
-def _cache_key(origin: str, destination: str, mode: str, departure_bucket: int | None = None) -> str:
+def _cache_key(
+    origin: str, destination: str, mode: str, language: str, departure_bucket: int | None = None,
+) -> str:
     # Round coordinates to 5 dp to collapse trivially different floats.
     def _norm(coord: str) -> str:
         parts = coord.split(",")
@@ -79,7 +95,10 @@ def _cache_key(origin: str, destination: str, mode: str, departure_bucket: int |
                 pass
         return coord
 
-    raw = f"directions:{_norm(origin)}:{_norm(destination)}:{mode}"
+    # language is always folded in (unlike the departure bucket) so English
+    # and Spanish requests for the same route never collide — deploying this
+    # changed the key shape, so old `dir:*` entries were flushed once.
+    raw = f"directions:{_norm(origin)}:{_norm(destination)}:{mode}:{language}"
     # Only transit passes a departure bucket; other modes keep their old keys
     # (no cache churn) since walking/driving/bicycling don't depend on time.
     if departure_bucket is not None:
@@ -93,6 +112,7 @@ def fetch_directions(
     destination: str,
     mode: str,
     departure_time: int | None = None,
+    language: str | None = None,
 ) -> dict | None:
     """
     Core Directions fetch — cache-first, returns the trimmed result dict.
@@ -103,24 +123,35 @@ def fetch_directions(
 
     departure_time (unix seconds) is honoured for transit only and is folded
     into the cache key via a 5-minute bucket.
+
+    language is an app locale code (see frontend/lib/i18n.ts); an unsupported
+    or missing code falls back to English before hitting the cache or Google,
+    so turn-by-turn `steps[].instruction` come back localized.
     """
     api_key = _api_key()
     if not api_key:
         raise DirectionsError("Maps API key not configured", status_code=500)
 
+    language = _normalize_language(language)
     is_transit = mode == "transit"
     bucket = None
     if is_transit and departure_time:
         bucket = departure_time - (departure_time % DEPARTURE_BUCKET_S)
 
-    cache_key = _cache_key(origin, destination, mode, bucket)
+    cache_key = _cache_key(origin, destination, mode, language, bucket)
     r = get_redis()
     cached = r.get(cache_key)
     if cached:
         log.debug("Directions cache hit: %s", cache_key)
         return json.loads(cached)
 
-    params = {"origin": origin, "destination": destination, "mode": mode, "key": api_key}
+    params = {
+        "origin": origin,
+        "destination": destination,
+        "mode": mode,
+        "language": _GOOGLE_LANGUAGE[language],
+        "key": api_key,
+    }
     if is_transit and departure_time:
         params["departure_time"] = int(departure_time)
 
@@ -149,14 +180,14 @@ def fetch_directions(
             "distance_m": leg["distance"]["value"],
             "duration_s": leg["duration"]["value"],
             "polyline": route["overview_polyline"]["points"],
-            "steps": _extract_steps(leg),
+            "steps": _extract_steps(leg, language),
         }
     except (KeyError, IndexError) as exc:
         log.exception("Unexpected Directions API response shape: %s", exc)
         raise DirectionsError("Unexpected Directions API response", status_code=502) from exc
 
     r.setex(cache_key, CACHE_TTL, json.dumps(result))
-    log.debug("Directions cached for %ds: %s→%s [%s]", CACHE_TTL, origin, destination, mode)
+    log.debug("Directions cached for %ds: %s→%s [%s/%s]", CACHE_TTL, origin, destination, mode, language)
     return result
 
 
@@ -177,10 +208,18 @@ def _strip_html(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
-def _clean_instruction(instruction: str, maneuver: str) -> str:
-    """Make Google navigation instructions friendlier for tourists."""
+def _clean_instruction(instruction: str, maneuver: str, language: str = DEFAULT_LANGUAGE) -> str:
+    """Make Google navigation instructions friendlier for tourists.
+
+    These patterns ("Head northwest…", "toward X") match Google's English
+    phrasing only — they're a no-op on other languages' instructions, so we
+    skip them outright rather than leave dead regex running on non-English
+    text.
+    """
     if not instruction:
         return instruction
+    if language != "en":
+        return instruction.strip()
     # "Head northwest on X toward Y" → "Continue on X"
     # Only on steps with no explicit maneuver (the initial heading step)
     if not maneuver:
@@ -201,19 +240,23 @@ _SKIP_PATTERN = re.compile(
 )
 
 
-def _extract_steps(leg: dict) -> list[dict]:
+def _extract_steps(leg: dict, language: str = DEFAULT_LANGUAGE) -> list[dict]:
     steps = []
     for step in leg.get("steps", []):
         raw_instruction = _strip_html(step.get("html_instructions", ""))
-        # Strip administrative notes appended by Google as inline divs (e.g. "Restricted usage road")
-        raw_instruction = _SKIP_PATTERN.sub("", raw_instruction).strip()
+        # Strip administrative notes appended by Google as inline divs (e.g.
+        # "Restricted usage road"). _SKIP_INSTRUCTIONS is English text, so
+        # this (like _clean_instruction) only trims something on English
+        # responses — on other languages the note passes through untouched.
+        if language == "en":
+            raw_instruction = _SKIP_PATTERN.sub("", raw_instruction).strip()
         maneuver = step.get("maneuver", "") or ""
 
         # Skip steps whose entire content is an administrative note
-        if raw_instruction.lower().rstrip(".") in _SKIP_INSTRUCTIONS:
+        if language == "en" and raw_instruction.lower().rstrip(".") in _SKIP_INSTRUCTIONS:
             continue
 
-        instruction = _clean_instruction(raw_instruction, maneuver)
+        instruction = _clean_instruction(raw_instruction, maneuver, language)
         if not instruction:
             continue
 
@@ -239,10 +282,14 @@ def _extract_steps(leg: dict) -> list[dict]:
             s["headsign"] = td.get("headsign")
         if step.get("steps"):
             sub = [
-                _clean_instruction(_strip_html(ss.get("html_instructions", "")), ss.get("maneuver", "") or "")
+                _clean_instruction(
+                    _strip_html(ss.get("html_instructions", "")), ss.get("maneuver", "") or "", language,
+                )
                 for ss in step["steps"]
             ]
-            s["sub_steps"] = [x for x in sub if x and x.lower().rstrip(".") not in _SKIP_INSTRUCTIONS]
+            s["sub_steps"] = [
+                x for x in sub if x and (language != "en" or x.lower().rstrip(".") not in _SKIP_INSTRUCTIONS)
+            ]
         steps.append(s)
     return steps
 
@@ -252,15 +299,16 @@ def get_directions(
     origin: str = Query(..., description="lat,lng of the start point"),
     destination: str = Query(..., description="lat,lng of the end point"),
     mode: TravelMode = Query(TravelMode.transit, description="Travel mode"),
+    language: str | None = Query(None, description="App locale code (en/es/fr/zh-Hans); unsupported falls back to en"),
 ):
     """
     Proxy Google Directions and return trimmed routing data.
 
     Returns: {mode, distance_m, duration_s, polyline, steps}
-    Caches results in Redis for 1 hour.
+    Caches results in Redis for 1 hour, keyed per language too.
     """
     try:
-        result = fetch_directions(origin, destination, str(mode))
+        result = fetch_directions(origin, destination, str(mode), language=language)
     except DirectionsError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 

@@ -46,7 +46,7 @@ const MODE_META: Record<
 };
 
 export default function ComparisonScreen() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { trip } = useTrip();
   const params = useLocalSearchParams<{ fromStopId?: string; toStopId?: string }>();
 
@@ -86,7 +86,7 @@ export default function ComparisonScreen() {
     MODES.forEach(async (mode) => {
       setLoadingModes((prev) => new Set([...prev, mode]));
       try {
-        const r = await api.getDirections(origin, dest, mode);
+        const r = await api.getDirections(origin, dest, mode, i18n.language);
         setResults((prev) => ({ ...prev, [mode]: r }));
       } catch (e: unknown) {
         setErrors((prev) => ({

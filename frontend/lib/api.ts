@@ -255,6 +255,8 @@ export interface RouteOptimizeRequest {
   destination: { lat: number; lng: number };
   preferences?: RouteMode[] | null;
   departure_time?: number | null;
+  /** App locale code (SupportedLanguage from lib/i18n.ts) — localizes turn-by-turn steps. */
+  language?: string;
 }
 
 // ── Saved itineraries ────────────────────────────────────────────────────────
@@ -367,9 +369,10 @@ export const api = {
       body: JSON.stringify(order),
     }),
 
-  getDirections: (origin: string, destination: string, mode: string) =>
+  getDirections: (origin: string, destination: string, mode: string, language?: string) =>
     request<DirectionsResult>(
-      `/api/directions?origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}&mode=${mode}`,
+      `/api/directions?origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}&mode=${mode}`
+      + (language ? `&language=${encodeURIComponent(language)}` : ''),
     ),
 
   upsertLeg: (

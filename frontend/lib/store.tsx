@@ -10,6 +10,10 @@ import {
   Stop,
   Trip,
 } from './api';
+// Module-level i18next instance, not the useTranslation hook — this is a
+// plain callback (not a component), and only needs the current language at
+// call time, not reactive re-rendering.
+import i18next from './i18n';
 
 /** All non-car modes the route engine can rank (mirrors route_engine.MODE_LABEL). */
 export const ROUTE_MODES: RouteMode[] = ['transit', 'metro_micro', 'bike', 'scooter', 'walk', 'ridehail'];
@@ -194,6 +198,7 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
           origin: { lat: from.lat, lng: from.lng },
           destination: { lat: to.lat, lng: to.lng },
           preferences: prefsToUse ?? null,
+          language: i18next.language,
         });
         setRouteOptions((prev) => ({ ...prev, [key]: result }));
         // Restore a previously-selected mode combo when it's still offered

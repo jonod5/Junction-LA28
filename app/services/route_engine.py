@@ -193,11 +193,11 @@ def _transit_boardings(steps: list[dict]) -> int:
 
 # ── Candidate builders ────────────────────────────────────────────────────────
 
-def _build_transit_candidates(origin, dest, departure_time, o_micro, d_micro) -> list[dict]:
+def _build_transit_candidates(origin, dest, departure_time, o_micro, d_micro, language) -> list[dict]:
     """Transit baseline + micromobility access/egress variants composed on top."""
     o = f"{origin[0]},{origin[1]}"
     d = f"{dest[0]},{dest[1]}"
-    tr = fetch_directions(o, d, "transit", departure_time)
+    tr = fetch_directions(o, d, "transit", departure_time, language=language)
     if not tr:
         return []
     steps = tr["steps"]
@@ -230,6 +230,13 @@ def _build_transit_candidates(origin, dest, departure_time, o_micro, d_micro) ->
         the instruction text for the vehicle's name, and scale each step's
         own duration by the same factor the leg total was scaled by —
         otherwise the expanded step list would still read at walking pace.
+
+        The "^walk\\b" swap below only matches Google's English phrasing, so
+        on a non-English response the instruction keeps its (already-
+        localized) "walk"-equivalent word instead of the vehicle name — a
+        known gap, since re-localizing this homegrown text surgery per
+        language is out of scope for what Phase 2 asked for (localizing
+        Google's own instruction text).
         """
         micro_s = walk_m / _speed(vtype)
         micro_cost = fares.micromobility_cost(micro_s / 60.0, vtype, pricing)
@@ -292,7 +299,7 @@ def _build_transit_candidates(origin, dest, departure_time, o_micro, d_micro) ->
     return out
 
 
-def _build_direct_candidates(origin, dest, o_micro, d_micro) -> list[dict]:
+def _build_direct_candidates(origin, dest, o_micro, d_micro, language) -> list[dict]:
     o = f"{origin[0]},{origin[1]}"
     d = f"{dest[0]},{dest[1]}"
     out: list[dict] = []
@@ -302,7 +309,7 @@ def _build_direct_candidates(origin, dest, o_micro, d_micro) -> list[dict]:
     # free, equal-or-faster option; in practice it always survives pruning
     # and stays visible, letting the traveler judge for themselves whether a
     # long walk is reasonable rather than having it silently disappear.
-    walk = fetch_directions(o, d, "walking")
+    walk = fetch_directions(o, d, "walking", language=language)
     if walk:
         out.append(_candidate(
             "walk", ["walk"], walk["duration_s"] / 60.0, 0.0, 0,
@@ -318,7 +325,7 @@ def _build_direct_candidates(origin, dest, o_micro, d_micro) -> list[dict]:
     # vehicle genuinely needs to be at the transfer point — direct point-to-
     # point cycling doesn't depend on a specific shared vehicle being nearby
     # at query time.)
-    bike = fetch_directions(o, d, "bicycling")
+    bike = fetch_directions(o, d, "bicycling", language=language)
     if bike and bike["distance_m"] <= MICRO_MAX_M:
         pricing = o_micro["pricing"] or d_micro["pricing"]
         minutes = bike["duration_s"] / 60.0
@@ -331,7 +338,7 @@ def _build_direct_candidates(origin, dest, o_micro, d_micro) -> list[dict]:
             ))
 
     # Rideshare (driving proxy) — always feasible where a road route exists.
-    drive = fetch_directions(o, d, "driving")
+    drive = fetch_directions(o, d, "driving", language=language)
     if drive:
         airport = _airport_code(*origin) or _airport_code(*dest)
         cost = fares.rideshare_estimate(drive["distance_m"], drive["duration_s"], airport_code=airport)
@@ -342,7 +349,7 @@ def _build_direct_candidates(origin, dest, o_micro, d_micro) -> list[dict]:
     return out
 
 
-def _build_metro_micro_candidate(origin, dest) -> dict | None:
+def _build_metro_micro_candidate(origin, dest, language) -> dict | None:
     """Metro Micro only when BOTH endpoints share one of its two zones."""
     o_zones = {z.id for z in metro_micro.zones_for_point(*origin)}
     d_zones = {z.id for z in metro_micro.zones_for_point(*dest)}
@@ -350,7 +357,7 @@ def _build_metro_micro_candidate(origin, dest) -> dict | None:
         return None
     o = f"{origin[0]},{origin[1]}"
     d = f"{dest[0]},{dest[1]}"
-    drive = fetch_directions(o, d, "driving")
+    drive = fetch_directions(o, d, "driving", language=language)
     if not drive:
         return None
     minutes = drive["duration_s"] / 60.0 + METRO_MICRO_WAIT_MIN
@@ -423,6 +430,7 @@ def optimize(
     destination: tuple[float, float],
     preferences: list[str] | None = None,
     departure_time: int | None = None,
+    language: str | None = None,
 ) -> dict:
     """
     Rank multimodal options for one origin→destination leg.  Deterministic.
@@ -430,6 +438,10 @@ def optimize(
     `preferences` is the set of allowed primary mode keys (see MODE_LABEL); a
     candidate using any mode outside it is filtered out before scoring.  Empty
     or None means "all modes allowed".
+
+    `language` is an app locale code, forwarded to every Directions call so
+    each candidate's turn-by-turn `steps[].instruction` come back in the
+    caller's language (see app.routers.directions.fetch_directions).
     """
     # A missing Maps key is a server misconfiguration, not a per-candidate miss.
     if not _api_key():
@@ -444,8 +456,8 @@ def optimize(
     # Each builder swallows "no route" (None) internally; upstream failures for a
     # single mode shouldn't sink the whole request, so guard per group.
     for builder in (
-        lambda: _build_transit_candidates(origin, destination, departure_time, o_micro, d_micro),
-        lambda: _build_direct_candidates(origin, destination, o_micro, d_micro),
+        lambda: _build_transit_candidates(origin, destination, departure_time, o_micro, d_micro, language),
+        lambda: _build_direct_candidates(origin, destination, o_micro, d_micro, language),
     ):
         try:
             cands.extend(builder())
@@ -456,7 +468,7 @@ def optimize(
 
     mm = None
     try:
-        mm = _build_metro_micro_candidate(origin, destination)
+        mm = _build_metro_micro_candidate(origin, destination, language)
     except DirectionsError as exc:
         if exc.status_code == 500:
             raise
