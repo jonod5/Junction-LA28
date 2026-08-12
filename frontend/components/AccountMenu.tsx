@@ -20,19 +20,43 @@ function initialsFrom(name: string | undefined, email: string | undefined): stri
   return source.slice(0, 2).toUpperCase();
 }
 
+/** Always-visible entry point to the SP survey — anonymous by design, so
+ * unlike everything else in this menu it must not be gated on sign-in or
+ * even on Supabase being configured. */
+function SurveyButton({ router }: { router: ReturnType<typeof useRouter> }) {
+  return (
+    <Pressable
+      onPress={() => router.push('/survey')}
+      accessibilityRole="button"
+      accessibilityLabel="Take our travel survey"
+      style={styles.surveyBtn}
+    >
+      <Feather name="clipboard" size={13} color={colors.primary} />
+      <Text style={styles.surveyBtnText}>Survey</Text>
+    </Pressable>
+  );
+}
+
 export function AccountMenu() {
   const { user, account, loading, isConfigured, signInWithGoogle, signOut } = useAuth();
   const router = useRouter();
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
 
-  // No Supabase project configured — there's nothing this menu can do, so
-  // stay out of the way entirely rather than showing a dead "Sign in" button.
-  if (!isConfigured || loading) return null;
+  // No Supabase project configured — the account half of this menu has
+  // nothing to do, but the survey link still needs to show.
+  if (!isConfigured || loading) {
+    return (
+      <View style={styles.wrap}>
+        <SurveyButton router={router} />
+      </View>
+    );
+  }
 
   if (!user) {
     return (
       <View style={styles.wrap}>
+        <SurveyButton router={router} />
         <Pressable
           onPress={() => signInWithGoogle()}
           accessibilityRole="button"
@@ -58,6 +82,7 @@ export function AccountMenu() {
 
   return (
     <View style={styles.wrap}>
+      <SurveyButton router={router} />
       <Pressable
         onPress={() => setOpen((v) => !v)}
         accessibilityRole="button"
@@ -124,7 +149,13 @@ export function AccountMenu() {
 }
 
 const styles = StyleSheet.create({
-  wrap: { position: 'absolute', top: 12, right: 12, zIndex: 200, alignItems: 'flex-end' },
+  wrap: { position: 'absolute', top: 12, right: 12, zIndex: 200, flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  surveyBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: colors.surface, borderRadius: radius.full,
+    paddingVertical: 8, paddingHorizontal: spacing.sm, ...shadow.sm,
+  },
+  surveyBtnText: { fontFamily: 'Barlow_600SemiBold', fontSize: 13, color: colors.primary },
   signInBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     backgroundColor: colors.surface, borderRadius: radius.full,

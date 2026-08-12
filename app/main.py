@@ -20,7 +20,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
 from app.db import engine
-from app.routers import account, directions, itineraries, micromobility, places, routes, trips, vehicles, venues
+from app.routers import (
+    account,
+    directions,
+    itineraries,
+    micromobility,
+    places,
+    routes,
+    survey,
+    trips,
+    vehicles,
+    venues,
+)
 
 log = logging.getLogger(__name__)
 
@@ -84,6 +95,7 @@ app.include_router(directions.router)
 app.include_router(venues.router)
 app.include_router(itineraries.router)
 app.include_router(account.router)
+app.include_router(survey.router)
 
 
 @app.get("/health")

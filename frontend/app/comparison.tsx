@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 
 import { DeepLinkButtons } from '@/components/DeepLinkButtons';
+import { OptionCard, type OptionCardVariant } from '@/components/OptionCard';
 import { PolicyBanner } from '@/components/PolicyBanner';
 import { colors, radius, shadow, spacing } from '@/constants/theme';
 import { api, DirectionsResult, type TransitLiveStatus } from '@/lib/api';
@@ -35,14 +36,13 @@ const MODE_META: Record<
   {
     icon: React.ComponentProps<typeof Feather>['name'];
     labelKey: string;
-    recommended: boolean;
-    discouraged: boolean;
+    variant: OptionCardVariant;
   }
 > = {
-  transit: { icon: 'navigation', labelKey: 'comparison.modes.transit', recommended: true, discouraged: false },
-  walking: { icon: 'user', labelKey: 'comparison.modes.walk', recommended: false, discouraged: false },
-  bicycling: { icon: 'activity', labelKey: 'comparison.modes.bike', recommended: false, discouraged: false },
-  driving: { icon: 'truck', labelKey: 'comparison.modes.drive', recommended: false, discouraged: true },
+  transit: { icon: 'navigation', labelKey: 'comparison.modes.transit', variant: 'recommended' },
+  walking: { icon: 'user', labelKey: 'comparison.modes.walk', variant: 'default' },
+  bicycling: { icon: 'activity', labelKey: 'comparison.modes.bike', variant: 'default' },
+  driving: { icon: 'truck', labelKey: 'comparison.modes.drive', variant: 'discouraged' },
 };
 
 export default function ComparisonScreen() {
@@ -139,9 +139,9 @@ export default function ComparisonScreen() {
         {MODES.map((mode) => {
           const meta = MODE_META[mode];
           const label = t(meta.labelKey);
-          const badge = meta.recommended
+          const badge = meta.variant === 'recommended'
             ? t('comparison.badges.recommended')
-            : meta.discouraged
+            : meta.variant === 'discouraged'
               ? t('comparison.badges.discouraged')
               : undefined;
           const result = results[mode];
@@ -149,84 +149,23 @@ export default function ComparisonScreen() {
           const isLoading = loadingModes.has(mode);
 
           return (
-            <View
+            <OptionCard
               key={mode}
-              style={[
-                styles.modeCard,
-                meta.recommended && styles.modeCardRecommended,
-                meta.discouraged && styles.modeCardDiscouraged,
-              ]}
+              icon={meta.icon}
+              label={label}
+              badge={badge}
+              variant={meta.variant}
+              metrics={result && !isLoading ? [
+                { icon: 'clock', text: formatDuration(result.duration_s) },
+                { icon: 'map-pin', text: formatDistance(result.distance_m) },
+              ] : undefined}
             >
-              <View style={styles.modeCardHeader}>
-                <View
-                  style={[
-                    styles.modeIcon,
-                    meta.recommended && styles.modeIconRecommended,
-                    meta.discouraged && styles.modeIconDiscouraged,
-                  ]}
-                >
-                  <Feather
-                    name={meta.icon}
-                    size={18}
-                    color={
-                      meta.recommended
-                        ? colors.onPrimary
-                        : meta.discouraged
-                          ? colors.drivingWarning
-                          : colors.secondary
-                    }
-                  />
-                </View>
-                <Text
-                  style={[
-                    styles.modeLabel,
-                    meta.recommended && styles.modeLabelRecommended,
-                    meta.discouraged && styles.modeLabelDiscouraged,
-                  ]}
-                >
-                  {label}
-                </Text>
-                {badge && (
-                  <View
-                    style={[
-                      styles.badge,
-                      meta.recommended ? styles.badgeRecommended : styles.badgeDiscouraged,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.badgeText,
-                        meta.recommended
-                          ? styles.badgeTextRecommended
-                          : styles.badgeTextDiscouraged,
-                      ]}
-                    >
-                      {badge}
-                    </Text>
-                  </View>
-                )}
-              </View>
-
               {isLoading && (
                 <ActivityIndicator
-                  color={meta.recommended ? colors.secondary : colors.muted}
+                  color={meta.variant === 'recommended' ? colors.secondary : colors.muted}
                   size="small"
                   style={styles.loader}
                 />
-              )}
-
-              {result && !isLoading && (
-                <View style={styles.modeResult}>
-                  <View style={styles.modeResultItem}>
-                    <Feather name="clock" size={14} color={colors.secondary} />
-                    <Text style={styles.modeResultValue}>{formatDuration(result.duration_s)}</Text>
-                  </View>
-                  <View style={styles.modeResultSep} />
-                  <View style={styles.modeResultItem}>
-                    <Feather name="map-pin" size={14} color={colors.secondary} />
-                    <Text style={styles.modeResultValue}>{formatDistance(result.distance_m)}</Text>
-                  </View>
-                </View>
               )}
 
               {error && !isLoading && (
@@ -250,7 +189,7 @@ export default function ComparisonScreen() {
                 </View>
               )}
 
-              {meta.discouraged && (
+              {meta.variant === 'discouraged' && (
                 <View style={styles.discouragedNote}>
                   <Feather name="alert-triangle" size={13} color={colors.drivingWarning} />
                   <Text style={styles.discouragedNoteText}>
@@ -263,7 +202,7 @@ export default function ComparisonScreen() {
               <DeepLinkButtons
                 links={linksForModes(MODE_DEEPLINK_KEYS[mode], originPlace, destPlace)}
               />
-            </View>
+            </OptionCard>
           );
         })}
 
@@ -327,101 +266,9 @@ const styles = StyleSheet.create({
     color: colors.foreground,
     marginBottom: -spacing.xs,
   },
-  // ── Mode cards ─────────────────────────────────────────────────────────────
-  modeCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    gap: spacing.md,
-    ...shadow.sm,
-    borderWidth: 1.5,
-    borderColor: 'transparent',
-  },
-  modeCardRecommended: {
-    borderColor: colors.secondary,
-    backgroundColor: '#F0FAFE',
-  },
-  modeCardDiscouraged: {
-    borderColor: colors.border,
-    opacity: 0.85,
-  },
-  modeCardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  modeIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.mutedBg,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  modeIconRecommended: {
-    backgroundColor: colors.secondary,
-  },
-  modeIconDiscouraged: {
-    backgroundColor: '#FEF2F2',
-  },
-  modeLabel: {
-    fontFamily: 'Barlow_600SemiBold',
-    fontSize: 16,
-    color: colors.foreground,
-    flex: 1,
-  },
-  modeLabelRecommended: {
-    color: colors.secondary,
-  },
-  modeLabelDiscouraged: {
-    color: colors.muted,
-  },
-  badge: {
-    borderRadius: radius.full,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 3,
-  },
-  badgeRecommended: {
-    backgroundColor: colors.secondary,
-  },
-  badgeDiscouraged: {
-    backgroundColor: '#FEF2F2',
-    borderWidth: 1,
-    borderColor: colors.drivingWarning,
-  },
-  badgeText: {
-    fontFamily: 'Barlow_600SemiBold',
-    fontSize: 11,
-  },
-  badgeTextRecommended: {
-    color: colors.onPrimary,
-  },
-  badgeTextDiscouraged: {
-    color: colors.drivingWarning,
-  },
+  // ── Mode cards — shell styling lives in components/OptionCard.tsx ──────────
   loader: {
     alignSelf: 'flex-start',
-  },
-  modeResult: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-  },
-  modeResultItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-  },
-  modeResultValue: {
-    fontFamily: 'BarlowCondensed_700Bold',
-    fontSize: 22,
-    color: colors.foreground,
-  },
-  modeResultSep: {
-    width: 1,
-    height: 16,
-    backgroundColor: colors.border,
   },
   modeError: {
     fontFamily: 'Barlow_400Regular',

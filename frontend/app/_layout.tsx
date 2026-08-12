@@ -73,6 +73,9 @@ function RootLayoutNav() {
               />
               <Stack.Screen name="itineraries" options={{ title: t('itineraries.title') }} />
               <Stack.Screen name="settings" options={{ title: t('settings.title') }} />
+              {/* Not translated (yet) — this is a Phase 2a skeleton, scoped
+                  separately from the v1.5 i18n pass. */}
+              <Stack.Screen name="survey" options={{ title: 'Survey' }} />
             </Stack>
             <AccountMenu />
           </ThemeProvider>

@@ -259,6 +259,39 @@ export interface RouteOptimizeRequest {
   language?: string;
 }
 
+// ── Stated-preference (SP) survey ───────────────────────────────────────────
+
+export interface SPAlternative {
+  id: number;
+  alt_code: string;
+  mode_label: string;
+  travel_time_min: number | null;
+  cost_usd: number | null;
+  walk_time_min: number | null;
+  transfers: number | null;
+  extra: Record<string, unknown>;
+}
+
+export interface SPChoiceTask {
+  id: number;
+  task_code: string;
+  alternatives: SPAlternative[];
+}
+
+export interface SPSessionStart {
+  respondent_id: string;
+  survey_id: number;
+  block_id: string | null;
+  total_tasks: number;
+}
+
+export interface SPNextTask {
+  task: SPChoiceTask | null;
+  task_number: number;
+  total_tasks: number;
+  completed: boolean;
+}
+
 // ── Saved itineraries ────────────────────────────────────────────────────────
 
 /** Shape of Itinerary.saved_plan — owned by this file, stored verbatim by the
@@ -403,6 +436,28 @@ export const api = {
 
   getTransitLive: (line: string) =>
     request<TransitLiveStatus>(`/api/transit/live?line=${encodeURIComponent(line)}`),
+
+  // Sessions are anonymous by default — attachAccount only sends a signed-in
+  // user's id if they explicitly opt in (see app.routers.survey).
+  startSurveySession: (surveyId: number, attachAccount = false) =>
+    request<SPSessionStart>(`/api/survey/${surveyId}/session`, {
+      method: 'POST',
+      body: JSON.stringify({ attach_account: attachAccount }),
+    }),
+
+  getNextSurveyTask: (respondentId: string) =>
+    request<SPNextTask>(`/api/survey/session/${respondentId}/next`),
+
+  recordSurveyChoice: (respondentId: string, taskId: number, chosenAlternativeId: number, shownAt: string) =>
+    request<void>(`/api/survey/session/${respondentId}/choice`, {
+      method: 'POST',
+      body: JSON.stringify({ task_id: taskId, chosen_alternative_id: chosenAlternativeId, shown_at: shownAt }),
+    }),
+
+  completeSurveySession: (respondentId: string) =>
+    request<{ respondent_id: string; completed_at: string }>(`/api/survey/session/${respondentId}/complete`, {
+      method: 'POST',
+    }),
 
   listItineraries: (params: ItineraryListParams = {}) => {
     const q = new URLSearchParams();

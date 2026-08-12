@@ -122,3 +122,18 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
         user.avatar_url = avatar_url
         db.commit()
     return user
+
+
+def get_current_user_optional(request: Request, db: Session = Depends(get_db)) -> User | None:
+    """
+    Same as get_current_user, but returns None instead of raising when
+    there's no (or an invalid) bearer token — for endpoints where signing in
+    is optional, e.g. an anonymous-by-default SP survey session that a
+    signed-in user may opt into attaching their account to.
+    """
+    if not request.headers.get("Authorization", "").startswith("Bearer "):
+        return None
+    try:
+        return get_current_user(request, db)
+    except HTTPException:
+        return None
