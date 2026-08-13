@@ -30,9 +30,10 @@ import re
 from enum import StrEnum
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.cache import get_redis
+from app.rate_limit import DIRECTIONS_RATE_LIMIT, rate_limit
 
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["directions"])
@@ -294,7 +295,7 @@ def _extract_steps(leg: dict, language: str = DEFAULT_LANGUAGE) -> list[dict]:
     return steps
 
 
-@router.get("/api/directions")
+@router.get("/api/directions", dependencies=[Depends(rate_limit("directions", DIRECTIONS_RATE_LIMIT, 60))])
 def get_directions(
     origin: str = Query(..., description="lat,lng of the start point"),
     destination: str = Query(..., description="lat,lng of the end point"),
@@ -303,6 +304,10 @@ def get_directions(
 ):
     """
     Proxy Google Directions and return trimmed routing data.
+
+    Rate-limited (see app.rate_limit) — this calls the real, paid Google
+    Directions API on a cache miss, so an unbounded client could otherwise
+    drive up billing directly through our own proxy.
 
     Returns: {mode, distance_m, duration_s, polyline, steps}
     Caches results in Redis for 1 hour, keyed per language too.

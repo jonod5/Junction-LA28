@@ -7,15 +7,24 @@ input and maps engine errors to HTTP status codes.
 """
 
 import logging
+import os
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from app.rate_limit import rate_limit
 from app.routers.directions import DirectionsError
 from app.services import route_engine
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/routes", tags=["routes"])
+
+# A single call here can fan out to 4-6+ Google Directions calls internally
+# (one per candidate mode) — a lower per-minute cap than /api/directions'
+# reflects that higher per-request cost. Own scope, own env var: a user
+# actively planning hits both endpoints and neither should eat the other's
+# budget.
+OPTIMIZE_RATE_LIMIT = int(os.environ.get("RATE_LIMIT_OPTIMIZE_PER_MIN", "15"))
 
 
 class Coord(BaseModel):
@@ -37,7 +46,7 @@ class RouteOptimizeRequest(BaseModel):
     language: str | None = None
 
 
-@router.post("/optimize")
+@router.post("/optimize", dependencies=[Depends(rate_limit("routes_optimize", OPTIMIZE_RATE_LIMIT, 60))])
 def optimize_routes(body: RouteOptimizeRequest):
     """Return a deterministic, ranked set of multimodal route options."""
     try:

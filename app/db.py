@@ -11,7 +11,26 @@ DATABASE_URL = _raw_url.replace("postgresql://", "postgresql+psycopg2://", 1)
 
 # pool_pre_ping=True transparently reconnects stale connections; important
 # because the backend container can restart while Postgres is still healthy.
-engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+_engine_kwargs: dict = {"pool_pre_ping": True}
+
+# Pool sizing — SQLite (the test suite's DATABASE_URL) doesn't accept these
+# kwargs at all, so they're Postgres-only. A load test found the un-tuned
+# SQLAlchemy defaults (pool_size=5, max_overflow=10 → 15 total) exhausted
+# under concurrent load well before 200 simultaneous requests, cascading
+# into PoolTimeout/ReadTimeout errors across every DB-touching endpoint.
+#
+# Tune via env vars to fit your actual Postgres plan's max_connections,
+# leaving headroom for other consumers (migrations, psql, etc.):
+#   pool_size + max_overflow, PER WORKER PROCESS, must stay comfortably
+#   under that ceiling. Running N Uvicorn workers (see Dockerfile's
+#   WEB_CONCURRENCY) multiplies this by N, since each worker process gets
+#   its own independent engine/pool — 2 workers x (10+20) = 60 connections.
+if DATABASE_URL.startswith("postgresql"):
+    _engine_kwargs["pool_size"] = int(os.environ.get("DB_POOL_SIZE", "10"))
+    _engine_kwargs["max_overflow"] = int(os.environ.get("DB_MAX_OVERFLOW", "20"))
+    _engine_kwargs["pool_timeout"] = int(os.environ.get("DB_POOL_TIMEOUT", "30"))
+
+engine = create_engine(DATABASE_URL, **_engine_kwargs)
 
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 

@@ -34,6 +34,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, Header, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user_optional
@@ -185,12 +186,22 @@ def record_choice(respondent_id: str, body: ChoiceRequest, db: Session = Depends
     if not alternative or alternative.task_id != body.task_id:
         raise HTTPException(status_code=400, detail="chosen_alternative_id does not belong to task_id")
 
-    db.add(SPResponse(
-        respondent_id=respondent_id,
-        task_id=body.task_id,
-        chosen_alternative_id=body.chosen_alternative_id,
-        shown_at=body.shown_at,
-    ))
+    # The check above is a TOCTOU race under concurrency (a double-click, or
+    # a client retry after a slow/timed-out first response) — two requests
+    # can both pass it before either commits. The uq_sp_response_respondent_task
+    # constraint (0011) is the real guard; a SAVEPOINT here means losing that
+    # race only unwinds this one insert, not the whole request, so it still
+    # comes back as the same clean 409 rather than a 500.
+    try:
+        with db.begin_nested():
+            db.add(SPResponse(
+                respondent_id=respondent_id,
+                task_id=body.task_id,
+                chosen_alternative_id=body.chosen_alternative_id,
+                shown_at=body.shown_at,
+            ))
+    except IntegrityError:
+        raise HTTPException(status_code=409, detail="This task has already been answered") from None
     db.commit()
 
 

@@ -134,7 +134,15 @@ def reorder_stops(trip_id: int, body: list[StopReorder], db: Session = Depends(g
     trip = _get_trip_or_404(trip_id, db)
     # Build a lookup to avoid N queries.
     stop_map = {s.id: s for s in trip.stops}
-    for item in body:
+    # Apply in a stable order (by stop_id) rather than the client-supplied
+    # sequence — Postgres row locks are acquired in statement order, so two
+    # concurrent reorders of the same trip (e.g. rapid drag-and-drop events)
+    # that happened to touch the same stops in opposite orders could lock
+    # row A then wait on row B while the other transaction locked B then
+    # waited on A: a real deadlock, with one side aborted by Postgres. A
+    # fixed order makes every transaction acquire these locks the same way,
+    # so that inversion can't happen.
+    for item in sorted(body, key=lambda i: i.stop_id):
         if item.stop_id in stop_map:
             stop_map[item.stop_id].order_index = item.order_index
     db.commit()

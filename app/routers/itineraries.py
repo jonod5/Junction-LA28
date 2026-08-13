@@ -27,6 +27,7 @@ import datetime as dt
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
@@ -50,7 +51,17 @@ def _get_owned_itinerary_or_404(itinerary_id: int, user: User, db: Session) -> I
 
 
 def _resolve_tags(names: list[str], user: User, db: Session) -> list[ItineraryTag]:
-    """Get-or-create per-user tags by name, de-duplicated and stripped."""
+    """Get-or-create per-user tags by name, de-duplicated and stripped.
+
+    Two concurrent requests for the same new tag name (e.g. saving two
+    itineraries with the same never-before-used tag at once, or a retry
+    after a slow/timed-out first attempt) can both pass the "does it exist"
+    check before either commits — the second insert then hits
+    ItineraryTag's (user_id, name) unique constraint. Each create attempt
+    runs in its own SAVEPOINT so a conflict only unwinds that one insert
+    (not any other tags already flushed earlier in this same call) — the
+    loser re-queries and picks up the winner's row instead of 500ing.
+    """
     unique_names = {n.strip() for n in names if n.strip()}
     if not unique_names:
         return []
@@ -64,9 +75,17 @@ def _resolve_tags(names: list[str], user: User, db: Session) -> list[ItineraryTa
     for name in unique_names:
         tag = existing_by_name.get(name)
         if tag is None:
-            tag = ItineraryTag(user_id=user.id, name=name)
-            db.add(tag)
-            db.flush()  # assign an id before it's linked into itinerary.tags
+            try:
+                with db.begin_nested():
+                    tag = ItineraryTag(user_id=user.id, name=name)
+                    db.add(tag)
+                    db.flush()  # assign an id before it's linked into itinerary.tags
+            except IntegrityError:
+                tag = (
+                    db.query(ItineraryTag)
+                    .filter(ItineraryTag.user_id == user.id, ItineraryTag.name == name)
+                    .one()
+                )
         tags.append(tag)
     return tags
 

@@ -41,6 +41,7 @@ from sqlalchemy import (
     Integer,
     Numeric,
     String,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -130,6 +131,17 @@ class SPResponse(Base):
     """One recorded choice."""
 
     __tablename__ = "sp_response"
+    __table_args__ = (
+        # Without this, two near-simultaneous submits for the same task
+        # (double-click, a client retry after a slow/timed-out first
+        # response) both pass the router's "already answered" check before
+        # either commits, and BOTH inserts succeed — silently duplicating a
+        # respondent's choice in the research data rather than erroring.
+        # This turns that into a clean, catchable constraint violation
+        # instead (see app.routers.survey.record_choice's IntegrityError
+        # handling).
+        UniqueConstraint("respondent_id", "task_id", name="uq_sp_response_respondent_task"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     respondent_id: Mapped[str] = mapped_column(

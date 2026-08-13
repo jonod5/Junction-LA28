@@ -23,6 +23,7 @@ before an itinerary can FK to it.
 
 import logging
 import os
+import uuid
 
 import jwt
 from fastapi import Depends, HTTPException, Request
@@ -103,6 +104,17 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
     email = claims.get("email")
     if not uid or not email:
         raise HTTPException(status_code=401, detail="Token missing required claims")
+    # Supabase always issues `sub` as a UUID and `email` well under 320
+    # chars — a signature-valid but malformed/corrupted token (or a client
+    # bug) with an oversized/malshaped claim would otherwise reach
+    # db.get(User, uid) and fail as an unhandled psycopg2 DataError (500)
+    # instead of a clean 401.
+    try:
+        uuid.UUID(uid)
+    except (ValueError, AttributeError, TypeError):
+        raise HTTPException(status_code=401, detail="Token has an invalid subject claim") from None
+    if len(email) > 320:
+        raise HTTPException(status_code=401, detail="Token has an invalid email claim")
 
     user_metadata = claims.get("user_metadata") or {}
     avatar_url = user_metadata.get("avatar_url")

@@ -20,6 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
 from app.db import engine
+from app.rate_limit import GLOBAL_RATE_LIMIT, GlobalRateLimitMiddleware
 from app.routers import (
     account,
     directions,
@@ -85,6 +86,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Generic per-IP flooding/scraping guard, on top of the stricter per-endpoint
+# limits on the two Google-cost-bearing routes (see app.rate_limit).
+app.add_middleware(GlobalRateLimitMiddleware, max_requests=GLOBAL_RATE_LIMIT, window_s=60)
 
 app.include_router(vehicles.router)
 app.include_router(micromobility.router)

@@ -140,6 +140,27 @@ def test_token_missing_claims_raises_401(db_session, monkeypatch):
     assert exc.value.status_code == 401
 
 
+def test_oversized_sub_claim_raises_401_not_500(db_session, monkeypatch):
+    # A signature-valid token whose `sub` doesn't fit users.id (String(36))
+    # used to reach db.get(User, uid) and blow up as an unhandled
+    # psycopg2.errors.StringDataRightTruncation (500) — must 401 instead.
+    monkeypatch.delenv("SUPABASE_URL", raising=False)
+    monkeypatch.setenv("SUPABASE_JWT_SECRET", HS_SECRET)
+    token = _hs256_token(sub=f"not-a-uuid-{SUB}")
+    with pytest.raises(HTTPException) as exc:
+        auth.get_current_user(_request(token), db_session)
+    assert exc.value.status_code == 401
+
+
+def test_non_uuid_sub_claim_raises_401(db_session, monkeypatch):
+    monkeypatch.delenv("SUPABASE_URL", raising=False)
+    monkeypatch.setenv("SUPABASE_JWT_SECRET", HS_SECRET)
+    token = _hs256_token(sub="short-but-not-a-uuid")
+    with pytest.raises(HTTPException) as exc:
+        auth.get_current_user(_request(token), db_session)
+    assert exc.value.status_code == 401
+
+
 def test_jwks_valid_token_creates_user(db_session, monkeypatch):
     # Real RSA keypair signed locally — monkeypatches the JWKS *lookup* only,
     # so this exercises real jwt.decode() verification without needing a
