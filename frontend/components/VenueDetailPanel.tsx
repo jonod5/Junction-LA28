@@ -21,6 +21,10 @@ interface Props {
   onClose: () => void;
   /** "Plan route from here" — closes the panel and focuses the itinerary/route panel. */
   onViewRoutes: () => void;
+  /** 'floating' (default): fixed-position card docked over the desktop map.
+   *  'sheet': fills its parent instead — used when the caller already
+   *  provides the positioning/chrome (the mobile BottomSheet). */
+  variant?: 'floating' | 'sheet';
 }
 
 /**
@@ -32,7 +36,7 @@ interface Props {
  * All text arrives pre-stripped of provenance asides by the API; this
  * component never renders a source/citation string.
  */
-export function VenueDetailPanel({ venue, loading, error, liveCount, liveLoading, liveError, onClose, onViewRoutes }: Props) {
+export function VenueDetailPanel({ venue, loading, error, liveCount, liveLoading, liveError, onClose, onViewRoutes, variant = 'floating' }: Props) {
   const { t } = useTranslation();
   const [parkingOpen, setParkingOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
@@ -54,7 +58,7 @@ export function VenueDetailPanel({ venue, loading, error, liveCount, liveLoading
   ] : [];
 
   return (
-    <div style={PANEL_CSS}>
+    <div style={variant === 'floating' ? PANEL_CSS : SHEET_CSS}>
       <View style={styles.header}>
         <Text style={styles.venueName} numberOfLines={2}>{venue?.name ?? t('venueDetail.venue')}</Text>
         <Pressable onPress={onClose} hitSlop={10} accessibilityLabel={t('venueDetail.closeVenueDetails')} accessibilityRole="button">
@@ -68,7 +72,7 @@ export function VenueDetailPanel({ venue, loading, error, liveCount, liveLoading
       ) : error ? (
         <Text style={styles.errorText}>{error}</Text>
       ) : (
-        <ScrollView style={styles.scroll} contentContainerStyle={{ gap: spacing.md }} showsVerticalScrollIndicator={false}>
+        <ScrollView style={variant === 'floating' ? styles.scroll : styles.scrollSheet} contentContainerStyle={{ gap: spacing.md }} showsVerticalScrollIndicator={false}>
           {/* Live micromobility count — glanceable, top of the card. */}
           <View style={styles.liveRow}>
             <Feather name="zap" size={13} color={liveCount ? colors.success : colors.mutedFg} />
@@ -157,6 +161,12 @@ const PANEL_CSS: React.CSSProperties = {
   background: 'rgba(255,255,255,0.97)', backdropFilter: 'blur(6px)',
   borderRadius: 14, padding: 16, boxShadow: '0 4px 20px rgba(0,0,0,0.18)', zIndex: 11,
   display: 'flex', flexDirection: 'column', gap: 6,
+};
+
+// Mobile: rendered inside BottomSheet, which already owns position/height/
+// scrolling chrome — this just needs to fill it and stay flexible.
+const SHEET_CSS: React.CSSProperties = {
+  padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: 6, height: '100%',
 };
 
 /** Bold label + terse fragment, one fact per line — the panel-wide row style. */
@@ -290,6 +300,7 @@ const styles = StyleSheet.create({
   hint: { fontFamily: 'Barlow_400Regular', fontSize: 13, color: colors.muted, paddingVertical: spacing.md },
   errorText: { fontFamily: 'Barlow_400Regular', fontSize: 13, color: colors.destructive, paddingVertical: spacing.md },
   scroll: { maxHeight: 420 },
+  scrollSheet: { flex: 1 },
   liveRow: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.mutedBg, borderRadius: radius.sm, padding: spacing.sm },
   liveText: { fontFamily: 'Barlow_600SemiBold', fontSize: 12, color: colors.foreground, flex: 1 },
   hero: { backgroundColor: '#F0FAFE', borderRadius: radius.sm, padding: spacing.sm, borderLeftWidth: 3, borderLeftColor: colors.secondary, gap: 4 },

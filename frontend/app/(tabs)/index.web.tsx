@@ -18,9 +18,11 @@ import {
   Pressable,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
 
+import { BottomSheet, type SheetSnap } from '@/components/BottomSheet';
 import { DeepLinkButtons } from '@/components/DeepLinkButtons';
 import { ModePreferencesChecklist } from '@/components/ModePreferencesChecklist';
 import { PolicyBanner } from '@/components/PolicyBanner';
@@ -56,6 +58,10 @@ import { decodePolyline, formatDistance, formatDuration } from '@/lib/polyline';
 import { ROUTE_MODES, useTrip } from '@/lib/store';
 
 const MAPS_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_KEY ?? '';
+
+// Below this width, floating side panels don't fit — switch to the mobile
+// bottom-sheet layout instead (see isMobile in the main component).
+const MOBILE_BREAKPOINT = 768;
 
 declare global {
   interface Window {
@@ -320,6 +326,13 @@ export default function UnifiedPlannerScreen() {
   const router = useRouter();
   const { t, i18n } = useTranslation();
 
+  // Below ~768px, floating side panels don't fit — the itinerary and venue
+  // detail panels become one bottom sheet instead (see MOBILE_BREAKPOINT
+  // usages below). Desktop layout is otherwise untouched.
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const isMobile = windowWidth < MOBILE_BREAKPOINT;
+  const [sheetSnap, setSheetSnap] = useState<SheetSnap>('half');
+
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
   const markersRef = useRef<google.maps.Marker[]>([]);
@@ -376,6 +389,13 @@ export default function UnifiedPlannerScreen() {
 
   const openVenuePanel = (id: number, lat: number, lng: number) => setOpenVenue({ id, lat, lng });
   const closeVenuePanel = () => setOpenVenue(null);
+
+  // Mobile: opening a venue swaps the bottom sheet's content to its detail
+  // view — pop it to 'half' so that's actually visible rather than staying
+  // collapsed at 'peek'.
+  useEffect(() => {
+    if (isMobile && openVenue) setSheetSnap('half');
+  }, [isMobile, openVenue]);
 
   // Auto-create a session trip on first load — the unified flow doesn't ask
   // the traveler to name a trip; matches the PRD's first-open flow exactly
@@ -529,6 +549,15 @@ export default function UnifiedPlannerScreen() {
       const hit = new window.google.maps.Polyline({ path, strokeOpacity: 0, strokeWeight: 16, map, zIndex: 25 });
       hit.addListener('mouseover', (e: google.maps.MapMouseEvent) => { if (e.latLng) openHover(html, e.latLng); });
       hit.addListener('mouseout', scheduleClose);
+      // Touch has no hover — tap opens the same info via the click window
+      // instead. Needed for every mode EXCEPT transit, whose visible polyline
+      // already has its own tap-friendly click listener (see below); wiring
+      // it here too for transit is harmless (same content, same window).
+      hit.addListener('click', (e: google.maps.MapMouseEvent) => {
+        clickWindowRef.current?.setContent(html);
+        clickWindowRef.current?.setPosition(e.latLng ?? path[Math.floor(path.length / 2)]);
+        clickWindowRef.current?.open(map);
+      });
       polylinesRef.current.push(hit);
     };
 
@@ -811,9 +840,16 @@ export default function UnifiedPlannerScreen() {
     const bounds = new window.google.maps.LatLngBounds();
     bounds.extend(venuePos);
     nearbyPoints.forEach((p) => bounds.extend({ lat: p.lat, lng: p.lng }));
-    // Right padding clears the venue panel (380px wide + margin); left/top/
-    // bottom padding keeps the venue off the very edge.
-    map.fitBounds(bounds, { top: 80, right: 400, bottom: 80, left: 80 });
+    // Desktop: right padding clears the floating venue panel (380px wide +
+    // margin). Mobile: the venue panel is a bottom sheet at 'half' height
+    // instead (see the openVenue effect above), so it's bottom padding, not
+    // right, that needs to clear it — using a fixed 400px right pad on a
+    // ~390px-wide phone screen left no valid viewport for fitBounds to work
+    // with and threw the camera off completely.
+    const fitPadding = isMobile
+      ? { top: 60, right: 20, bottom: Math.round(windowHeight * 0.55), left: 20 }
+      : { top: 80, right: 400, bottom: 80, left: 80 };
+    map.fitBounds(bounds, fitPadding);
     // fitBounds can still land on a wider zoom than expected with a tight
     // cluster in a small viewport — floor it so opening a venue never reads
     // as "zooming out".
@@ -880,13 +916,229 @@ export default function UnifiedPlannerScreen() {
     return sum + (opt?.total_cost_usd ?? 0);
   }, 0);
 
+  // Itinerary content — identical on desktop (inside the floating PANEL_STYLE
+  // div) and mobile (inside the BottomSheet); only the wrapper differs.
+  const plannerContent = (
+    <>
+      <View style={[styles.panelHeader, styles.panelHeaderRow]}>
+        <Text style={styles.panelTitle}>{t('planner.title')}</Text>
+        <Pressable onPress={() => router.push('/itineraries')} accessibilityRole="button" accessibilityLabel={t('planner.myItineraries')} style={styles.gearBtn}>
+          <Feather name="bookmark" size={16} color={colors.primary} />
+        </Pressable>
+      </View>
+      <View style={{ marginBottom: spacing.sm }}>
+        <PolicyBanner text={t('common.gamesPolicy')} compact />
+      </View>
+
+      {error && (
+        <Pressable onPress={clearError} style={styles.errorBanner}>
+          <Feather name="alert-circle" size={13} color={colors.destructive} />
+          <Text style={styles.errorBannerText}>{error}</Text>
+        </Pressable>
+      )}
+
+      {!onboardingDone ? (
+        wizardStep === 'destination' ? (
+          <View style={{ gap: spacing.sm }}>
+            <Text style={styles.stepTitle}>{t('planner.wizard.destinationTitle')}</Text>
+            <Text style={styles.stepHint}>{t('planner.wizard.destinationHint')}</Text>
+            <StopSearch addedNames={addedNames} onSelect={handleSelectSearchItem} onFocus={() => isMobile && setSheetSnap('full')} />
+            {stops.length > 0 && (
+              <View style={{ gap: 4, marginTop: spacing.xs }}>
+                {stops.map((s, i) => (
+                  <View key={s.id} style={styles.miniStopRow}>
+                    <Pressable
+                      onPress={() => s.venue_id != null && openVenuePanel(s.venue_id, s.lat, s.lng)}
+                      disabled={s.venue_id == null}
+                      style={styles.stopRowTapArea}
+                      accessibilityRole="button"
+                      accessibilityLabel={t('planner.stop.viewDetailsFor', { name: s.name })}
+                    >
+                      <View style={styles.miniStopBadge}><Text style={styles.miniStopBadgeText}>{i + 1}</Text></View>
+                      <Text style={styles.miniStopName} numberOfLines={1}>{s.name}</Text>
+                    </Pressable>
+                    <Pressable onPress={() => removeStop(s.id)} hitSlop={8} accessibilityLabel={t('planner.stop.removeName', { name: s.name })}>
+                      <Feather name="x" size={14} color={colors.mutedFg} />
+                    </Pressable>
+                  </View>
+                ))}
+              </View>
+            )}
+            <Pressable
+              onPress={() => setWizardStep('preferences')}
+              disabled={stops.length === 0}
+              accessibilityRole="button"
+              style={({ pressed }) => [styles.primaryBtn, stops.length === 0 && styles.primaryBtnDisabled, pressed && { opacity: 0.85 }]}
+            >
+              <Text style={styles.primaryBtnText}>{t('common.next')}</Text>
+              <Feather name="arrow-right" size={15} color={colors.onPrimary} />
+            </Pressable>
+          </View>
+        ) : (
+          <View style={{ gap: spacing.sm }}>
+            <Text style={styles.stepTitle}>{t('planner.wizard.preferencesTitle')}</Text>
+            <Text style={styles.stepHint}>{t('planner.wizard.preferencesHint')}</Text>
+            <ModePreferencesChecklist selected={draftPrefs} onChange={setDraftPrefs} />
+            <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.xs }}>
+              <Pressable onPress={() => setWizardStep('destination')} accessibilityRole="button" style={({ pressed }) => [styles.secondaryBtn, pressed && { opacity: 0.85 }]}>
+                <Feather name="arrow-left" size={14} color={colors.primary} />
+                <Text style={styles.secondaryBtnText}>{t('common.back')}</Text>
+              </Pressable>
+              <Pressable
+                onPress={finishOnboarding}
+                disabled={draftPrefs.length === 0}
+                accessibilityRole="button"
+                style={({ pressed }) => [styles.primaryBtn, { flex: 1 }, draftPrefs.length === 0 && styles.primaryBtnDisabled, pressed && { opacity: 0.85 }]}
+              >
+                <Text style={styles.primaryBtnText}>{t('planner.wizard.viewTrip')}</Text>
+              </Pressable>
+            </View>
+            {draftPrefs.length === 0 && <Text style={styles.stepHint}>{t('planner.wizard.selectAtLeastOne')}</Text>}
+          </View>
+        )
+      ) : (
+        <View style={{ gap: spacing.sm }}>
+          {/* Summary + preferences toggle */}
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryText}>
+              {t('common.stop', { count: stops.length })}{totalMinutes > 0 ? ` · ${formatDuration(totalMinutes * 60)}` : ''}{totalCost > 0 ? ` · ~$${totalCost.toFixed(2)}` : ''}
+            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Pressable onPress={openSaveDialog} accessibilityRole="button" accessibilityLabel={t('planner.saveThisTrip')} style={styles.gearBtn}>
+                <Feather name="bookmark" size={14} color={colors.primary} />
+              </Pressable>
+              <Pressable onPress={() => setPrefsOpen((v) => !v)} accessibilityRole="button" style={styles.gearBtn}>
+                <Feather name="sliders" size={14} color={colors.primary} />
+              </Pressable>
+            </View>
+          </View>
+          {saveError && <Text style={styles.legError}>{saveError}</Text>}
+          {prefsOpen && (
+            <View style={styles.prefsPanel}>
+              <ModePreferencesChecklist
+                selected={preferences ?? ROUTE_MODES}
+                onChange={setPreferences}
+              />
+            </View>
+          )}
+
+          {/* Stop list */}
+          <View style={{ gap: 6 }}>
+            {stops.map((s, i) => (
+              <View key={s.id} style={styles.stopRow}>
+                <Pressable
+                  onPress={() => s.venue_id != null && openVenuePanel(s.venue_id, s.lat, s.lng)}
+                  disabled={s.venue_id == null}
+                  style={styles.stopRowTapArea}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('planner.stop.viewDetailsFor', { name: s.name })}
+                >
+                  <View style={styles.miniStopBadge}><Text style={styles.miniStopBadgeText}>{i + 1}</Text></View>
+                  <Text style={styles.miniStopName} numberOfLines={1}>{s.name}</Text>
+                </Pressable>
+                <Pressable onPress={() => moveStop(i, -1)} disabled={i === 0} hitSlop={6} accessibilityLabel={t('planner.stop.moveUp', { name: s.name })}>
+                  <Feather name="chevron-up" size={15} color={i === 0 ? colors.border : colors.muted} />
+                </Pressable>
+                <Pressable onPress={() => moveStop(i, 1)} disabled={i === stops.length - 1} hitSlop={6} accessibilityLabel={t('planner.stop.moveDown', { name: s.name })}>
+                  <Feather name="chevron-down" size={15} color={i === stops.length - 1 ? colors.border : colors.muted} />
+                </Pressable>
+                <Pressable onPress={() => removeStop(s.id)} hitSlop={6} accessibilityLabel={t('planner.stop.removeName', { name: s.name })}>
+                  <Feather name="x-circle" size={15} color={colors.mutedFg} />
+                </Pressable>
+              </View>
+            ))}
+          </View>
+
+          {addingStop ? (
+            <StopSearch addedNames={addedNames} onSelect={handleSelectSearchItem} onFocus={() => isMobile && setSheetSnap('full')} />
+          ) : (
+            <Pressable onPress={() => setAddingStop(true)} accessibilityRole="button" style={styles.addStopBtn}>
+              <Feather name="plus" size={14} color={colors.primary} />
+              <Text style={styles.addStopText}>{t('planner.stop.addStop')}</Text>
+            </Pressable>
+          )}
+
+          {/* Route options per consecutive leg */}
+          {pairs.map(({ from, to }) => {
+            const key = `${from.id}-${to.id}`;
+            const res = routeOptions[key];
+            const isLoading = routeOptionsLoading[key];
+            const err = routeOptionsError[key];
+            const selId = selectedOptionId[key];
+            const originPlace: Place = { lat: from.lat, lng: from.lng, name: from.name };
+            const destPlace: Place = { lat: to.lat, lng: to.lng, name: to.name };
+            return (
+              <View key={key} style={styles.legCard}>
+                <Text style={styles.legHeader} numberOfLines={1}>{from.name} → {to.name}</Text>
+                {isLoading && <ActivityIndicator color={colors.primary} size="small" style={{ alignSelf: 'flex-start', marginTop: 4 }} />}
+                {err && !isLoading && (
+                  <View style={{ gap: 4 }}>
+                    <Text style={styles.legError}>{err}</Text>
+                    <Pressable onPress={() => optimizeLeg(from, to)} style={styles.secondaryBtn}>
+                      <Feather name="refresh-cw" size={12} color={colors.primary} />
+                      <Text style={styles.secondaryBtnText}>{t('common.retry')}</Text>
+                    </Pressable>
+                  </View>
+                )}
+                {res && !isLoading && (
+                  <View style={{ gap: 6 }}>
+                    {res.options.map((opt: RouteOption, idx: number) => {
+                      const active = opt.id === selId;
+                      return (
+                        <Pressable
+                          key={opt.id}
+                          onPress={() => selectRouteOption(from.id, to.id, opt.id)}
+                          accessibilityRole="button"
+                          style={[styles.optionCard, active && styles.optionCardActive]}
+                        >
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <Text style={[styles.optionLabel, active && styles.optionLabelActive]} numberOfLines={1}>{opt.label}</Text>
+                            {idx === 0 && <Text style={styles.bestBadge}>{t('planner.leg.best')}</Text>}
+                          </View>
+                          <Text style={styles.optionMeta}>
+                            {formatDuration(opt.total_minutes * 60)} · ~${opt.total_cost_usd.toFixed(2)}
+                            {opt.num_transfers > 0 ? ` · ${t('common.transfer', { count: opt.num_transfers })}` : ''}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+
+                    {selId && (
+                      <>
+                        <Pressable onPress={() => setExpandedLeg(expandedLeg === key ? null : key)} style={styles.stepsToggle}>
+                          <Text style={styles.secondaryBtnText}>{expandedLeg === key ? t('planner.leg.hideSteps') : t('planner.leg.showSteps')}</Text>
+                          <Feather name={expandedLeg === key ? 'chevron-up' : 'chevron-down'} size={13} color={colors.primary} />
+                        </Pressable>
+                        {expandedLeg === key && (
+                          <div style={{ paddingLeft: 4 }}>
+                            {(renderSteps[key] ?? []).map((step, i) => <StepRow key={i} step={step} />)}
+                          </div>
+                        )}
+                        <DeepLinkButtons
+                          links={linksForModes(
+                            res.options.find((o) => o.id === selId)?.modes ?? [],
+                            originPlace, destPlace,
+                          )}
+                        />
+                      </>
+                    )}
+                  </View>
+                )}
+              </View>
+            );
+          })}
+        </View>
+      )}
+    </>
+  );
+
   return (
     <View style={styles.wrapper}>
       <div ref={containerRef as React.RefObject<HTMLDivElement>} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
 
       {/* ── Map layers legend (bottom-left) ──────────────────────────────── */}
       {!mapError && (
-        <div style={LEGEND_STYLE}>
+        <div style={isMobile ? LEGEND_STYLE_MOBILE : LEGEND_STYLE}>
           <div style={{ ...LEGEND_LABEL, fontSize: 9, color: '#9CA3AF', letterSpacing: '0.06em', marginBottom: 4 }}>{t('planner.legend.nearby')}</div>
           {(Object.keys(TRANSIT_LAYER_CONFIG) as TransitLayer[]).map((layer) => {
             const { label, fill } = TRANSIT_LAYER_CONFIG[layer];
@@ -915,224 +1167,17 @@ export default function UnifiedPlannerScreen() {
         </div>
       )}
 
-      {/* ── Main floating panel (top-left) ───────────────────────────────── */}
-      {!mapError && (
+      {/* ── Main floating panel (top-left, desktop only) ─────────────────── */}
+      {!mapError && !isMobile && (
         <div style={PANEL_STYLE}>
-          <View style={[styles.panelHeader, styles.panelHeaderRow]}>
-            <Text style={styles.panelTitle}>{t('planner.title')}</Text>
-            <Pressable onPress={() => router.push('/itineraries')} accessibilityRole="button" accessibilityLabel={t('planner.myItineraries')} style={styles.gearBtn}>
-              <Feather name="bookmark" size={16} color={colors.primary} />
-            </Pressable>
-          </View>
-          <View style={{ marginBottom: spacing.sm }}>
-            <PolicyBanner text={t('common.gamesPolicy')} compact />
-          </View>
-
-          {error && (
-            <Pressable onPress={clearError} style={styles.errorBanner}>
-              <Feather name="alert-circle" size={13} color={colors.destructive} />
-              <Text style={styles.errorBannerText}>{error}</Text>
-            </Pressable>
-          )}
-
-          {!onboardingDone ? (
-            wizardStep === 'destination' ? (
-              <View style={{ gap: spacing.sm }}>
-                <Text style={styles.stepTitle}>{t('planner.wizard.destinationTitle')}</Text>
-                <Text style={styles.stepHint}>{t('planner.wizard.destinationHint')}</Text>
-                <StopSearch addedNames={addedNames} onSelect={handleSelectSearchItem} />
-                {stops.length > 0 && (
-                  <View style={{ gap: 4, marginTop: spacing.xs }}>
-                    {stops.map((s, i) => (
-                      <View key={s.id} style={styles.miniStopRow}>
-                        <Pressable
-                          onPress={() => s.venue_id != null && openVenuePanel(s.venue_id, s.lat, s.lng)}
-                          disabled={s.venue_id == null}
-                          style={styles.stopRowTapArea}
-                          accessibilityRole="button"
-                          accessibilityLabel={t('planner.stop.viewDetailsFor', { name: s.name })}
-                        >
-                          <View style={styles.miniStopBadge}><Text style={styles.miniStopBadgeText}>{i + 1}</Text></View>
-                          <Text style={styles.miniStopName} numberOfLines={1}>{s.name}</Text>
-                        </Pressable>
-                        <Pressable onPress={() => removeStop(s.id)} hitSlop={8} accessibilityLabel={t('planner.stop.removeName', { name: s.name })}>
-                          <Feather name="x" size={14} color={colors.mutedFg} />
-                        </Pressable>
-                      </View>
-                    ))}
-                  </View>
-                )}
-                <Pressable
-                  onPress={() => setWizardStep('preferences')}
-                  disabled={stops.length === 0}
-                  accessibilityRole="button"
-                  style={({ pressed }) => [styles.primaryBtn, stops.length === 0 && styles.primaryBtnDisabled, pressed && { opacity: 0.85 }]}
-                >
-                  <Text style={styles.primaryBtnText}>{t('common.next')}</Text>
-                  <Feather name="arrow-right" size={15} color={colors.onPrimary} />
-                </Pressable>
-              </View>
-            ) : (
-              <View style={{ gap: spacing.sm }}>
-                <Text style={styles.stepTitle}>{t('planner.wizard.preferencesTitle')}</Text>
-                <Text style={styles.stepHint}>{t('planner.wizard.preferencesHint')}</Text>
-                <ModePreferencesChecklist selected={draftPrefs} onChange={setDraftPrefs} />
-                <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.xs }}>
-                  <Pressable onPress={() => setWizardStep('destination')} accessibilityRole="button" style={({ pressed }) => [styles.secondaryBtn, pressed && { opacity: 0.85 }]}>
-                    <Feather name="arrow-left" size={14} color={colors.primary} />
-                    <Text style={styles.secondaryBtnText}>{t('common.back')}</Text>
-                  </Pressable>
-                  <Pressable
-                    onPress={finishOnboarding}
-                    disabled={draftPrefs.length === 0}
-                    accessibilityRole="button"
-                    style={({ pressed }) => [styles.primaryBtn, { flex: 1 }, draftPrefs.length === 0 && styles.primaryBtnDisabled, pressed && { opacity: 0.85 }]}
-                  >
-                    <Text style={styles.primaryBtnText}>{t('planner.wizard.viewTrip')}</Text>
-                  </Pressable>
-                </View>
-                {draftPrefs.length === 0 && <Text style={styles.stepHint}>{t('planner.wizard.selectAtLeastOne')}</Text>}
-              </View>
-            )
-          ) : (
-            <View style={{ gap: spacing.sm }}>
-              {/* Summary + preferences toggle */}
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryText}>
-                  {t('common.stop', { count: stops.length })}{totalMinutes > 0 ? ` · ${formatDuration(totalMinutes * 60)}` : ''}{totalCost > 0 ? ` · ~$${totalCost.toFixed(2)}` : ''}
-                </Text>
-                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <Pressable onPress={openSaveDialog} accessibilityRole="button" accessibilityLabel={t('planner.saveThisTrip')} style={styles.gearBtn}>
-                    <Feather name="bookmark" size={14} color={colors.primary} />
-                  </Pressable>
-                  <Pressable onPress={() => setPrefsOpen((v) => !v)} accessibilityRole="button" style={styles.gearBtn}>
-                    <Feather name="sliders" size={14} color={colors.primary} />
-                  </Pressable>
-                </View>
-              </View>
-              {saveError && <Text style={styles.legError}>{saveError}</Text>}
-              {prefsOpen && (
-                <View style={styles.prefsPanel}>
-                  <ModePreferencesChecklist
-                    selected={preferences ?? ROUTE_MODES}
-                    onChange={setPreferences}
-                  />
-                </View>
-              )}
-
-              {/* Stop list */}
-              <View style={{ gap: 6 }}>
-                {stops.map((s, i) => (
-                  <View key={s.id} style={styles.stopRow}>
-                    <Pressable
-                      onPress={() => s.venue_id != null && openVenuePanel(s.venue_id, s.lat, s.lng)}
-                      disabled={s.venue_id == null}
-                      style={styles.stopRowTapArea}
-                      accessibilityRole="button"
-                      accessibilityLabel={t('planner.stop.viewDetailsFor', { name: s.name })}
-                    >
-                      <View style={styles.miniStopBadge}><Text style={styles.miniStopBadgeText}>{i + 1}</Text></View>
-                      <Text style={styles.miniStopName} numberOfLines={1}>{s.name}</Text>
-                    </Pressable>
-                    <Pressable onPress={() => moveStop(i, -1)} disabled={i === 0} hitSlop={6} accessibilityLabel={t('planner.stop.moveUp', { name: s.name })}>
-                      <Feather name="chevron-up" size={15} color={i === 0 ? colors.border : colors.muted} />
-                    </Pressable>
-                    <Pressable onPress={() => moveStop(i, 1)} disabled={i === stops.length - 1} hitSlop={6} accessibilityLabel={t('planner.stop.moveDown', { name: s.name })}>
-                      <Feather name="chevron-down" size={15} color={i === stops.length - 1 ? colors.border : colors.muted} />
-                    </Pressable>
-                    <Pressable onPress={() => removeStop(s.id)} hitSlop={6} accessibilityLabel={t('planner.stop.removeName', { name: s.name })}>
-                      <Feather name="x-circle" size={15} color={colors.mutedFg} />
-                    </Pressable>
-                  </View>
-                ))}
-              </View>
-
-              {addingStop ? (
-                <StopSearch addedNames={addedNames} onSelect={handleSelectSearchItem} />
-              ) : (
-                <Pressable onPress={() => setAddingStop(true)} accessibilityRole="button" style={styles.addStopBtn}>
-                  <Feather name="plus" size={14} color={colors.primary} />
-                  <Text style={styles.addStopText}>{t('planner.stop.addStop')}</Text>
-                </Pressable>
-              )}
-
-              {/* Route options per consecutive leg */}
-              {pairs.map(({ from, to }) => {
-                const key = `${from.id}-${to.id}`;
-                const res = routeOptions[key];
-                const isLoading = routeOptionsLoading[key];
-                const err = routeOptionsError[key];
-                const selId = selectedOptionId[key];
-                const originPlace: Place = { lat: from.lat, lng: from.lng, name: from.name };
-                const destPlace: Place = { lat: to.lat, lng: to.lng, name: to.name };
-                return (
-                  <View key={key} style={styles.legCard}>
-                    <Text style={styles.legHeader} numberOfLines={1}>{from.name} → {to.name}</Text>
-                    {isLoading && <ActivityIndicator color={colors.primary} size="small" style={{ alignSelf: 'flex-start', marginTop: 4 }} />}
-                    {err && !isLoading && (
-                      <View style={{ gap: 4 }}>
-                        <Text style={styles.legError}>{err}</Text>
-                        <Pressable onPress={() => optimizeLeg(from, to)} style={styles.secondaryBtn}>
-                          <Feather name="refresh-cw" size={12} color={colors.primary} />
-                          <Text style={styles.secondaryBtnText}>{t('common.retry')}</Text>
-                        </Pressable>
-                      </View>
-                    )}
-                    {res && !isLoading && (
-                      <View style={{ gap: 6 }}>
-                        {res.options.map((opt: RouteOption, idx: number) => {
-                          const active = opt.id === selId;
-                          return (
-                            <Pressable
-                              key={opt.id}
-                              onPress={() => selectRouteOption(from.id, to.id, opt.id)}
-                              accessibilityRole="button"
-                              style={[styles.optionCard, active && styles.optionCardActive]}
-                            >
-                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                                <Text style={[styles.optionLabel, active && styles.optionLabelActive]} numberOfLines={1}>{opt.label}</Text>
-                                {idx === 0 && <Text style={styles.bestBadge}>{t('planner.leg.best')}</Text>}
-                              </View>
-                              <Text style={styles.optionMeta}>
-                                {formatDuration(opt.total_minutes * 60)} · ~${opt.total_cost_usd.toFixed(2)}
-                                {opt.num_transfers > 0 ? ` · ${t('common.transfer', { count: opt.num_transfers })}` : ''}
-                              </Text>
-                            </Pressable>
-                          );
-                        })}
-
-                        {selId && (
-                          <>
-                            <Pressable onPress={() => setExpandedLeg(expandedLeg === key ? null : key)} style={styles.stepsToggle}>
-                              <Text style={styles.secondaryBtnText}>{expandedLeg === key ? t('planner.leg.hideSteps') : t('planner.leg.showSteps')}</Text>
-                              <Feather name={expandedLeg === key ? 'chevron-up' : 'chevron-down'} size={13} color={colors.primary} />
-                            </Pressable>
-                            {expandedLeg === key && (
-                              <div style={{ paddingLeft: 4 }}>
-                                {(renderSteps[key] ?? []).map((step, i) => <StepRow key={i} step={step} />)}
-                              </div>
-                            )}
-                            <DeepLinkButtons
-                              links={linksForModes(
-                                res.options.find((o) => o.id === selId)?.modes ?? [],
-                                originPlace, destPlace,
-                              )}
-                            />
-                          </>
-                        )}
-                      </View>
-                    )}
-                  </View>
-                );
-              })}
-            </View>
-          )}
+          {plannerContent}
         </div>
       )}
 
-      {/* Venue detail panel — right side, over the map (FR-I1/I2). */}
-      {!mapError && openVenue && (
+      {/* Venue detail panel — right side, over the map (FR-I1/I2, desktop only). */}
+      {!mapError && !isMobile && openVenue && (
         <VenueDetailPanel
+          variant="floating"
           venue={venueDetail}
           loading={venueDetailLoading}
           error={venueDetailError}
@@ -1142,6 +1187,30 @@ export default function UnifiedPlannerScreen() {
           onClose={closeVenuePanel}
           onViewRoutes={closeVenuePanel}
         />
+      )}
+
+      {/* ── Mobile: one bottom sheet, content swaps between itinerary and
+          venue detail (never both) ──────────────────────────────────────── */}
+      {!mapError && isMobile && (
+        <BottomSheet snap={sheetSnap} onSnapChange={setSheetSnap}>
+          {openVenue ? (
+            <VenueDetailPanel
+              variant="sheet"
+              venue={venueDetail}
+              loading={venueDetailLoading}
+              error={venueDetailError}
+              liveCount={venueLive?.count ?? null}
+              liveLoading={venueLiveLoading}
+              liveError={venueLiveError}
+              onClose={closeVenuePanel}
+              onViewRoutes={closeVenuePanel}
+            />
+          ) : (
+            <div style={{ padding: '0 16px 16px' }}>
+              {plannerContent}
+            </div>
+          )}
+        </BottomSheet>
       )}
 
       {/* Error overlay */}
@@ -1183,6 +1252,13 @@ const LEGEND_STYLE: React.CSSProperties = {
   background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(4px)',
   borderRadius: 10, padding: '10px 12px', boxShadow: '0 2px 10px rgba(0,0,0,0.15)',
   display: 'flex', flexDirection: 'column', gap: 7, zIndex: 10,
+};
+// Mobile: the itinerary panel lives in the bottom sheet instead, so top-left
+// is free — anchoring the legend there (instead of bottom-right) means it's
+// never covered at 'peek'/'half' sheet states, only briefly at 'full'.
+const LEGEND_STYLE_MOBILE: React.CSSProperties = {
+  ...LEGEND_STYLE, bottom: undefined, right: undefined, top: 12, left: 12,
+  padding: '8px 10px', gap: 5, maxWidth: 150,
 };
 const LEGEND_ROW: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8 };
 const LEGEND_LABEL: React.CSSProperties = { fontFamily: 'Barlow_500Medium', fontSize: 12, color: '#374151', fontWeight: '500' };

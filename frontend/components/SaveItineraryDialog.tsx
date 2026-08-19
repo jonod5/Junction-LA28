@@ -139,9 +139,10 @@ const styles = StyleSheet.create({
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
     backgroundColor: 'rgba(10,15,30,0.45)',
     alignItems: 'center', justifyContent: 'center', zIndex: 50,
+    paddingHorizontal: spacing.md,
   },
   card: {
-    width: 340, backgroundColor: colors.surface, borderRadius: radius.lg,
+    width: '100%', maxWidth: 340, backgroundColor: colors.surface, borderRadius: radius.lg,
     padding: spacing.lg, gap: spacing.xs, ...shadow.md,
   },
   title: { fontFamily: 'BarlowCondensed_700Bold', fontSize: 20, color: colors.foreground, marginBottom: spacing.xs },

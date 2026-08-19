@@ -14,10 +14,13 @@ interface Props {
   addedNames: string[];
   onSelect: (item: SearchItem) => void;
   placeholder?: string;
+  /** Mobile: lets the caller expand the bottom sheet when the on-screen
+   *  keyboard opens, so the input and results stay visible above it. */
+  onFocus?: () => void;
 }
 
 /** Type-ahead search across the 6 venues + 5 airports (FR-U2). */
-export function StopSearch({ addedNames, onSelect, placeholder }: Props) {
+export function StopSearch({ addedNames, onSelect, placeholder, onFocus }: Props) {
   const { t } = useTranslation();
   const [query, setQuery] = useState('');
 
@@ -39,6 +42,7 @@ export function StopSearch({ addedNames, onSelect, placeholder }: Props) {
         <TextInput
           value={query}
           onChangeText={setQuery}
+          onFocus={onFocus}
           placeholder={placeholder ?? t('search.placeholder')}
           placeholderTextColor={colors.mutedFg}
           style={styles.input}
