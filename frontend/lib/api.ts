@@ -2,12 +2,17 @@ import { supabase } from './supabase';
 
 // On production web (Vercel), use relative URLs — vercel.json rewrites /api/* to Railway.
 // On native or local dev, fall back to the explicit env var or localhost.
+//
+// Computed lazily (called per-request, not cached at module load) — Metro's
+// EXPO_PUBLIC_* env polyfill isn't guaranteed to have run yet at the moment
+// this module first evaluates, and a module-level `const` would lock in
+// whatever it saw at that instant for the page's entire lifetime. By request
+// time the whole app has already mounted, so the env var is reliably there.
 function getBaseUrl(): string {
   if (process.env.EXPO_PUBLIC_API_URL) return process.env.EXPO_PUBLIC_API_URL;
   if (typeof window !== 'undefined' && window.location.hostname !== 'localhost') return '';
   return 'http://localhost:8000';
 }
-const BASE_URL = getBaseUrl();
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json', ...(options?.headers as Record<string, string> | undefined) };
@@ -18,7 +23,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const { data } = await supabase.auth.getSession();
   if (data.session?.access_token) headers['Authorization'] = `Bearer ${data.session.access_token}`;
 
-  const res = await fetch(`${BASE_URL}${path}`, { ...options, headers });
+  const res = await fetch(`${getBaseUrl()}${path}`, { ...options, headers });
   if (res.status === 204) return undefined as T;
   const body = await res.json();
   if (!res.ok) throw new Error(body?.detail ?? `HTTP ${res.status}`);

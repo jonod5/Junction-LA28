@@ -1,7 +1,17 @@
 // Mobile bottom sheet — Google Maps / Uber style. Web-only (raw DOM +
-// pointer events, not React Native gesture primitives) since this is only
-// ever mounted from index.web.tsx's mobile branch; the map behind it stays
-// full-bleed and interactive at every snap state except 'full'.
+// touch/mouse events, not React Native gesture primitives) since this is
+// only ever mounted from index.web.tsx's mobile branch; the map behind it
+// stays full-bleed and interactive at every snap state except 'full'.
+//
+// Deliberately NOT using the Pointer Events API / setPointerCapture: iOS
+// WebKit's implementation is unreliable enough that a capture which fails
+// to release cleanly ends up swallowing touches for the rest of the sheet
+// (confirmed on a real iPhone — every Pressable inside the sheet stopped
+// responding to touch, while everything outside it, e.g. the top-right
+// account menu, kept working fine). Touch events don't need capture at all
+// — the spec guarantees touchmove/touchend keep firing on the element
+// touchstart began on — and mouse dragging uses a standard document-level
+// listener pair instead.
 import React, { useRef, useState } from 'react';
 
 import { colors, radius } from '@/constants/theme';
@@ -55,23 +65,15 @@ export function BottomSheet({ snap, onSnapChange, peekHeight = 100, header, chil
 
   const currentHeight = Math.max(peekHeight, snapHeight(snap) - dragDelta);
 
-  const onGripPointerDown = (e: React.PointerEvent) => {
+  const startDrag = (clientY: number) => {
     draggingRef.current = true;
-    startYRef.current = e.clientY;
+    startYRef.current = clientY;
     startHeightRef.current = snapHeight(snap);
-    // Pointer capture is a nice-to-have (keeps the drag tracking even if the
-    // finger/cursor leaves the handle strip) — never worth crashing the
-    // whole app over if the browser refuses it for some pointer edge case.
-    try {
-      (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
-    } catch {
-      // ignore — drag still works without capture, just less forgiving
-    }
   };
-  const onGripPointerMove = (e: React.PointerEvent) => {
+  const moveDrag = (clientY: number) => {
     if (!draggingRef.current) return;
-    // Positive delta = finger moved down = shrink the sheet.
-    setDragDelta(e.clientY - startYRef.current);
+    // Positive delta = finger/cursor moved down = shrink the sheet.
+    setDragDelta(clientY - startYRef.current);
   };
   const endDrag = () => {
     if (!draggingRef.current) return;
@@ -84,6 +86,41 @@ export function BottomSheet({ snap, onSnapChange, peekHeight = 100, header, chil
     }
     const next = nearestSnap(startHeightRef.current - delta);
     if (next !== snap) onSnapChange(next);
+  };
+
+  // React Native Web installs a document-level touch tracker (feeds its
+  // Pressable/responder system) that listens to every touch on the page
+  // regardless of React's own event propagation. The grip's touches are
+  // handled entirely by this component and were never meant to enter that
+  // system — left alone, they desync its internal touch-id bookkeeping
+  // ("Cannot find single active touch") and that corrupted state then
+  // breaks Pressables elsewhere on the page, not just here. Stopping the
+  // native event outright (not just React's synthetic one) keeps the grip's
+  // drag fully local.
+  const isolate = (e: { nativeEvent: Event }) => e.nativeEvent.stopImmediatePropagation();
+
+  // Touch: touchmove/touchend are guaranteed by spec to keep firing on the
+  // element touchstart began on, wherever the finger goes — no capture API
+  // needed, so these can just be plain React props on the grip.
+  const onGripTouchStart = (e: React.TouchEvent) => { isolate(e); startDrag(e.touches[0].clientY); };
+  const onGripTouchMove = (e: React.TouchEvent) => { isolate(e); moveDrag(e.touches[0].clientY); };
+  const onGripTouchEnd = (e: React.TouchEvent) => { isolate(e); endDrag(); };
+
+  // Mouse: unlike touch, mousemove/mouseup don't keep targeting the
+  // original element once the cursor leaves it, so drag tracking needs
+  // document-level listeners — the standard pattern, attached on mousedown
+  // and torn down on mouseup so nothing lingers between drags.
+  const onGripMouseDown = (e: React.MouseEvent) => {
+    isolate(e);
+    startDrag(e.clientY);
+    const onMove = (ev: MouseEvent) => moveDrag(ev.clientY);
+    const onUp = () => {
+      endDrag();
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
   };
 
   return (
@@ -100,10 +137,11 @@ export function BottomSheet({ snap, onSnapChange, peekHeight = 100, header, chil
       }}
     >
       <div
-        onPointerDown={onGripPointerDown}
-        onPointerMove={onGripPointerMove}
-        onPointerUp={endDrag}
-        onPointerCancel={endDrag}
+        onTouchStart={onGripTouchStart}
+        onTouchMove={onGripTouchMove}
+        onTouchEnd={onGripTouchEnd}
+        onTouchCancel={onGripTouchEnd}
+        onMouseDown={onGripMouseDown}
         style={{
           flexShrink: 0, cursor: 'grab', paddingTop: 8, paddingBottom: 4,
           touchAction: 'none', userSelect: 'none',
