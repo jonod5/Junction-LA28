@@ -119,6 +119,10 @@ class TransitOut(BaseModel):
     bike_lane_nearby: bool | None
     gbfs_dock_description: str | None
     transit_notes: str | None
+    # Modeled ride-hail cost for the same trip, from the Tier-1 enrichment
+    # pipeline (see app/services/venue_enrichment.py) — None for
+    # hand-collected rows, which never computed one.
+    rideshare_estimate_usd: float | None
 
 
 class CurbOut(BaseModel):

@@ -62,6 +62,18 @@ class Venue(Base):
     date_collected: Mapped[date | None] = mapped_column(Date)
     data_sources_summary: Mapped[str | None] = mapped_column(Text)
 
+    # ── Automated pipeline provenance (v1.7 Tier-1/2) ──────────────────────
+    # Tracks whether THIS PIPELINE has run for this venue and had its
+    # output reviewed — distinct from the venue's overall data quality.
+    # The 6 original hand-collected venues default to reviewed=False here
+    # too (they predate this pipeline and were never run through it) — that
+    # does NOT mean their existing data is untrusted; nothing gates venue
+    # visibility on this column. See app/services/venue_enrichment.py's
+    # module docstring for the tier model this supports.
+    retrieved_at: Mapped[datetime | None] = mapped_column(DateTime)
+    confidence: Mapped[str | None] = mapped_column(String(20))
+    reviewed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
     # Relationships
     parking_options: Mapped[list["ParkingOption"]] = relationship(
         back_populates="venue", cascade="all, delete-orphan"
@@ -157,12 +169,26 @@ class TransitAccess(Base):
     bike_lane_nearby: Mapped[bool | None] = mapped_column(Boolean)
     gbfs_dock_description: Mapped[str | None] = mapped_column(Text)
     transit_notes: Mapped[str | None] = mapped_column(Text)
+    # Modeled ride-hail cost for this same trip (venue <-> this stop), from
+    # app.services.fares — a comparison point next to the transit option,
+    # not a quote. NULL for hand-collected rows, which never computed one.
+    rideshare_estimate_usd: Mapped[Decimal | None] = mapped_column(Numeric(8, 2))
 
     source: Mapped[str] = mapped_column(String(500), nullable=False)
     date_collected: Mapped[date | None] = mapped_column(Date)
     verified_at: Mapped[datetime | None] = mapped_column(DateTime)
     verified_by: Mapped[str | None] = mapped_column(String(50))
     data_gaps: Mapped[str | None] = mapped_column(Text)
+
+    # ── Automated pipeline provenance (v1.7 Tier-1/2) ──────────────────────
+    # external_ref stores the upstream feed's stable id (e.g. a GTFS
+    # stop_id) for rows this pipeline created — the key re-enrichment runs
+    # match against to update in place instead of duplicating, and that
+    # Phase 3's change detection diffs against. NULL for hand-collected rows.
+    external_ref: Mapped[str | None] = mapped_column(String(100))
+    retrieved_at: Mapped[datetime | None] = mapped_column(DateTime)
+    confidence: Mapped[str | None] = mapped_column(String(20))
+    reviewed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     venue: Mapped["Venue"] = relationship(back_populates="transit_accesses")
 

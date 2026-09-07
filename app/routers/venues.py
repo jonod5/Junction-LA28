@@ -196,8 +196,14 @@ def get_venue(
                 "transit_access", t.id, "gbfs_dock_description", _strip_provenance(t.gbfs_dock_description),
             ),
             transit_notes=tr("transit_access", t.id, "transit_notes", _strip_provenance(t.transit_notes)),
+            rideshare_estimate_usd=_float(t.rideshare_estimate_usd),
         )
-        for t in venue.transit_accesses
+        # Never present unreviewed data as fact (project-wide rule — see
+        # app/services/venue_enrichment.py). Every row today is reviewed
+        # (hand-collected rows were backfilled in migration 0012; Tier-1
+        # enrichment writes reviewed=True immediately); this filter is a
+        # no-op until Tier-2 extraction starts writing reviewed=False rows.
+        for t in venue.transit_accesses if t.reviewed
     ]
 
     curb = [
