@@ -179,7 +179,12 @@ def get_venue(
             is_closest_to_entrance=p.is_closest_to_entrance,
             notes=tr("parking_option", p.id, "notes", _strip_provenance(p.notes)),
         )
-        for p in venue.parking_options
+        # Never present unreviewed data as fact — see the same filter on
+        # `transit` below. A no-op today (hand-collected rows were
+        # backfilled reviewed=True in migration 0013; Tier-2 approvals set
+        # reviewed=True the moment they touch a row), but load-bearing the
+        # instant anything writes reviewed=False here.
+        for p in venue.parking_options if p.reviewed
     ]
 
     transit = [
@@ -228,11 +233,11 @@ def get_venue(
                 "curb_dropoff", c.id, "curbside_restrictions", _strip_provenance(c.curbside_restrictions),
             ),
         )
-        for c in venue.curb_dropoffs
+        for c in venue.curb_dropoffs if c.reviewed
     ]
 
     cong: CongestionOut | None = None
-    if venue.congestion_tdm:
+    if venue.congestion_tdm and venue.congestion_tdm.reviewed:
         td = venue.congestion_tdm
         cong = CongestionOut(
             id=td.id,

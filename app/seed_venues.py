@@ -1232,24 +1232,31 @@ VENUES: list[dict] = [
 # ---------------------------------------------------------------------------
 
 def seed(session: Session) -> None:
+    # This is hand-collected, human-verified data (see FIDELITY RULES above)
+    # — the gold standard the automated pipeline (v1.7) is validated
+    # against, not something it ever wrote. reviewed=True here mirrors the
+    # backfill migrations 0012/0013 run against the already-seeded
+    # production DB; without it, a *fresh* reseed would leave every row at
+    # its pipeline-oriented reviewed=False default and the API's "never
+    # show unreviewed data as fact" filter would hide all of it.
     for entry in VENUES:
-        v = Venue(**entry["venue"])
+        v = Venue(**entry["venue"], reviewed=True)
         session.add(v)
         session.flush()  # populate v.id before child inserts
 
         for p in entry.get("parking", []):
-            session.add(ParkingOption(venue_id=v.id, **p))
+            session.add(ParkingOption(venue_id=v.id, reviewed=True, **p))
 
         c = entry.get("curb")
         if c:
-            session.add(CurbDropoff(venue_id=v.id, **c))
+            session.add(CurbDropoff(venue_id=v.id, reviewed=True, **c))
 
         for t in entry.get("transit", []):
-            session.add(TransitAccess(venue_id=v.id, **t))
+            session.add(TransitAccess(venue_id=v.id, reviewed=True, **t))
 
         cong = entry.get("congestion")
         if cong:
-            session.add(CongestionTdm(venue_id=v.id, **cong))
+            session.add(CongestionTdm(venue_id=v.id, reviewed=True, **cong))
 
         for s in entry.get("sources", []):
             session.add(VenueSource(venue_id=v.id, **s))

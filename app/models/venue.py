@@ -90,6 +90,9 @@ class Venue(Base):
     sources: Mapped[list["VenueSource"]] = relationship(
         back_populates="venue", cascade="all, delete-orphan"
     )
+    extractions: Mapped[list["VenueExtraction"]] = relationship(
+        back_populates="venue", cascade="all, delete-orphan"
+    )
 
 
 class ParkingOption(Base):
@@ -124,6 +127,14 @@ class ParkingOption(Base):
     verified_by: Mapped[str | None] = mapped_column(String(50))
     data_gaps: Mapped[str | None] = mapped_column(Text)
 
+    # ── Automated pipeline provenance (v1.7 Phase 2) ────────────────────────
+    # Set when a Tier-2 extraction is approved into this row (see
+    # app/routers/venue_review.py) — never set by extraction itself, which
+    # only ever writes to VenueExtraction. See that model's docstring.
+    retrieved_at: Mapped[datetime | None] = mapped_column(DateTime)
+    confidence: Mapped[str | None] = mapped_column(String(20))
+    reviewed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
     venue: Mapped["Venue"] = relationship(back_populates="parking_options")
 
 
@@ -147,6 +158,11 @@ class CurbDropoff(Base):
     verified_at: Mapped[datetime | None] = mapped_column(DateTime)
     verified_by: Mapped[str | None] = mapped_column(String(50))
     data_gaps: Mapped[str | None] = mapped_column(Text)
+
+    # ── Automated pipeline provenance (v1.7 Phase 2) — see ParkingOption ───
+    retrieved_at: Mapped[datetime | None] = mapped_column(DateTime)
+    confidence: Mapped[str | None] = mapped_column(String(20))
+    reviewed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     venue: Mapped["Venue"] = relationship(back_populates="curb_dropoffs")
 
@@ -221,6 +237,11 @@ class CongestionTdm(Base):
     verified_by: Mapped[str | None] = mapped_column(String(50))
     data_gaps: Mapped[str | None] = mapped_column(Text)
 
+    # ── Automated pipeline provenance (v1.7 Phase 2) — see ParkingOption ───
+    retrieved_at: Mapped[datetime | None] = mapped_column(DateTime)
+    confidence: Mapped[str | None] = mapped_column(String(20))
+    reviewed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
     venue: Mapped["Venue"] = relationship(back_populates="congestion_tdm")
 
 
@@ -240,6 +261,54 @@ class VenueSource(Base):
     verified_at: Mapped[date | None] = mapped_column(Date)
 
     venue: Mapped["Venue"] = relationship(back_populates="sources")
+
+
+class VenueExtraction(Base):
+    """
+    Tier-2 review queue — one row per (venue, field) that
+    app.services.venue_extract drafted from a source page. This table is
+    the ONLY thing extraction writes to; nothing here is treated as fact
+    until a human decision via app/routers/venue_review.py copies a value
+    into ParkingOption / CurbDropoff / CongestionTdm (approve, or edit then
+    approve). Rejected and approved rows are kept as history, not deleted —
+    this table IS the audit trail.
+
+    entity_type is which table the field belongs to ("parking_option" /
+    "curb_dropoff" / "congestion_tdm"); unlike VenueTranslation there's no
+    entity_id, because at draft time the target row may not exist yet — see
+    app/routers/venue_review.py for how a decision resolves which row to
+    write to for each entity_type.
+
+    source_quote is the exact supporting text the LLM was instructed to
+    cite for extracted_value — see app/services/venue_extract.py's system
+    prompt. A field the LLM couldn't support with a quote is never written
+    here at all, not written with a null value.
+    """
+
+    __tablename__ = "venue_extraction"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    venue_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("venue.id", ondelete="CASCADE"), nullable=False
+    )
+
+    entity_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    field_name: Mapped[str] = mapped_column(String(50), nullable=False)
+    extracted_value: Mapped[str] = mapped_column(Text, nullable=False)
+    source_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    source_quote: Mapped[str] = mapped_column(Text, nullable=False)
+    confidence: Mapped[Decimal | None] = mapped_column(Numeric(4, 3))
+
+    # pending -> approved | edited | rejected | superseded (a later draft for
+    # the same venue/entity_type/field_name was approved instead — see
+    # app/routers/venue_review.py's decision endpoint).
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    corrected_value: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime)
+    reviewed_by: Mapped[str | None] = mapped_column(String(100))
+
+    venue: Mapped["Venue"] = relationship(back_populates="extractions")
 
 
 class VenueTranslation(Base):

@@ -31,6 +31,7 @@ from app.routers import (
     survey,
     trips,
     vehicles,
+    venue_review,
     venues,
 )
 
@@ -97,6 +98,10 @@ app.include_router(routes.router)
 app.include_router(places.router)
 app.include_router(trips.router)
 app.include_router(directions.router)
+# venue_review must be registered before venues — /api/venues/review-queue
+# would otherwise be shadowed by venues.router's /api/venues/{venue_id},
+# with "review-queue" failing int coercion into venue_id (422).
+app.include_router(venue_review.router)
 app.include_router(venues.router)
 app.include_router(itineraries.router)
 app.include_router(account.router)

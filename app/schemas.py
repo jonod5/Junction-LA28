@@ -149,6 +149,31 @@ class CongestionOut(BaseModel):
     general_tdm_notes: str | None
 
 
+class VenueExtractionOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    venue_id: int
+    entity_type: str
+    field_name: str
+    extracted_value: str
+    source_url: str
+    source_quote: str
+    confidence: float | None
+    status: str
+    corrected_value: str | None
+    created_at: datetime
+    reviewed_at: datetime | None
+    reviewed_by: str | None
+
+
+class ReviewDecisionIn(BaseModel):
+    """Body for POST /api/venues/review-queue/{id}/decision."""
+    decision: str  # "approve" | "edit" | "reject"
+    corrected_value: str | None = None
+    reviewed_by: str | None = None
+
+
 class VenueDetailOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
