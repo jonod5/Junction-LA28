@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 from app.models.venue import (
     CongestionTdm,
     CurbDropoff,
+    GamesTimeOfficial,
     ParkingOption,
     TransitAccess,
     Venue,
@@ -1239,8 +1240,11 @@ def seed(session: Session) -> None:
     # production DB; without it, a *fresh* reseed would leave every row at
     # its pipeline-oriented reviewed=False default and the API's "never
     # show unreviewed data as fact" filter would hide all of it.
+    # is_gold_standard=True (migration 0014's backfill, mirrored here for
+    # the same "fresh reseed" reason) is what app/validate_pipeline.py
+    # checks the pipeline's output against.
     for entry in VENUES:
-        v = Venue(**entry["venue"], reviewed=True)
+        v = Venue(**entry["venue"], reviewed=True, is_gold_standard=True)
         session.add(v)
         session.flush()  # populate v.id before child inserts
 
@@ -1257,6 +1261,11 @@ def seed(session: Session) -> None:
         cong = entry.get("congestion")
         if cong:
             session.add(CongestionTdm(venue_id=v.id, reviewed=True, **cong))
+
+        # Tier-3 scaffold — no official LA28 data exists yet for any venue;
+        # this row just makes that state visible rather than absent. See
+        # GamesTimeOfficial's docstring in app/models/venue.py.
+        session.add(GamesTimeOfficial(venue_id=v.id))
 
         for s in entry.get("sources", []):
             session.add(VenueSource(venue_id=v.id, **s))

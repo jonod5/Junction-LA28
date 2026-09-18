@@ -1,13 +1,14 @@
 """
-Tier-1 automated venue enrichment (v1.7 Phase 1).
+Tier-1 automated venue enrichment (v1.7 Phases 1 & 3).
 
 Covers:
   • find_nearest_transit: radius filtering, route lookup, parent-station
     dedup (a platform stop is dropped when its parent station is also in
     range)
-  • enrich_venue: writes provenance-tagged TransitAccess rows, and is
-    idempotent — a second run updates the same rows by external_ref
-    instead of duplicating them
+  • enrich_venue: writes provenance-tagged TransitAccess rows for brand-new
+    stops immediately; a re-run with nothing changed touches nothing; a
+    re-run where something changed drafts a pending_change review-queue
+    row instead of overwriting the stored value (Phase 3 change detection)
   • hand-collected rows (external_ref=None) are never touched by enrichment
 """
 
@@ -24,7 +25,7 @@ from sqlalchemy.pool import StaticPool  # noqa: E402
 
 from app.db import Base  # noqa: E402
 from app.models.gtfs import GtfsRoute, GtfsStop, GtfsStopTime, GtfsTrip  # noqa: E402
-from app.models.venue import TransitAccess, Venue  # noqa: E402
+from app.models.venue import TransitAccess, Venue, VenueExtraction  # noqa: E402
 from app.services.venue_enrichment import enrich_venue, find_nearest_transit  # noqa: E402
 
 # Venue at LA Memorial Coliseum-ish coordinates.
@@ -41,7 +42,7 @@ def db():
     Base.metadata.create_all(
         engine,
         tables=[
-            Venue.__table__, TransitAccess.__table__,
+            Venue.__table__, TransitAccess.__table__, VenueExtraction.__table__,
             GtfsStop.__table__, GtfsRoute.__table__, GtfsTrip.__table__, GtfsStopTime.__table__,
         ],
     )
@@ -127,7 +128,8 @@ class TestEnrichVenue:
         db.commit()
 
         assert result.rows_created == 1
-        assert result.rows_updated == 0
+        assert result.rows_unchanged == 0
+        assert result.changes_flagged == 0
         rows = db.query(TransitAccess).filter(TransitAccess.venue_id == venue.id).all()
         assert len(rows) == 1
         row = rows[0]
@@ -139,7 +141,7 @@ class TestEnrichVenue:
         assert row.rideshare_estimate_usd is not None
         assert venue.reviewed is True
 
-    def test_rerun_is_idempotent_updates_not_duplicates(self, db):
+    def test_rerun_with_nothing_changed_touches_nothing(self, db):
         venue = self._seed_venue_and_stop(db)
         enrich_venue(db, venue)
         db.commit()
@@ -148,9 +150,68 @@ class TestEnrichVenue:
         db.commit()
 
         assert result.rows_created == 0
-        assert result.rows_updated == 1
+        assert result.rows_unchanged == 1
+        assert result.changes_flagged == 0
         rows = db.query(TransitAccess).filter(TransitAccess.venue_id == venue.id).all()
         assert len(rows) == 1
+        assert db.query(VenueExtraction).count() == 0
+
+    def test_rerun_with_changed_field_drafts_pending_change_not_overwrite(self, db, _mock_external_calls):
+        venue = self._seed_venue_and_stop(db)
+        enrich_venue(db, venue)
+        db.commit()
+        original_row = db.query(TransitAccess).filter(TransitAccess.venue_id == venue.id).first()
+        original_line = original_row.line
+
+        # A route renumbering: the stop is now served by a different line.
+        db.add(GtfsRoute(route_id="204", route_short_name="204", route_long_name="Renumbered", route_type=3))
+        db.add(GtfsTrip(trip_id="trip-near-204", route_id="204"))
+        db.add(GtfsStopTime(trip_id="trip-near-204", stop_id="near", stop_sequence=1))
+        db.flush()
+
+        result = enrich_venue(db, venue)
+        db.commit()
+
+        assert result.rows_created == 0
+        assert result.changes_flagged == 1
+        db.refresh(original_row)
+        # The stored row is untouched — the change was drafted, not applied.
+        assert original_row.line == original_line
+
+        draft = db.query(VenueExtraction).filter(
+            VenueExtraction.entity_type == "transit_access", VenueExtraction.field_name == "line",
+        ).first()
+        assert draft is not None
+        assert draft.status == "pending_change"
+        assert draft.entity_id == original_row.id
+        assert draft.previous_value == original_line
+        assert "204" in draft.extracted_value
+
+    def test_rerun_replaces_stale_pending_change_draft(self, db, _mock_external_calls):
+        venue = self._seed_venue_and_stop(db)
+        enrich_venue(db, venue)
+        db.commit()
+        row = db.query(TransitAccess).filter(TransitAccess.venue_id == venue.id).first()
+
+        db.add(GtfsRoute(route_id="204", route_short_name="204", route_long_name="First change", route_type=3))
+        db.add(GtfsTrip(trip_id="trip-near-204", route_id="204"))
+        db.add(GtfsStopTime(trip_id="trip-near-204", stop_id="near", stop_sequence=1))
+        db.flush()
+        enrich_venue(db, venue)
+        db.commit()
+        assert db.query(VenueExtraction).filter(VenueExtraction.field_name == "line").count() == 1
+
+        db.add(GtfsRoute(route_id="999", route_short_name="999", route_long_name="Second change", route_type=3))
+        db.add(GtfsTrip(trip_id="trip-near-999", route_id="999"))
+        db.add(GtfsStopTime(trip_id="trip-near-999", stop_id="near", stop_sequence=1))
+        db.flush()
+        enrich_venue(db, venue)
+        db.commit()
+
+        line_drafts = db.query(VenueExtraction).filter(VenueExtraction.field_name == "line").all()
+        assert len(line_drafts) == 1
+        assert "999" in line_drafts[0].extracted_value
+        assert line_drafts[0].previous_value == row.line  # still diffed against the original stored value
 
     def test_never_touches_hand_collected_rows(self, db):
         venue = self._seed_venue_and_stop(db)

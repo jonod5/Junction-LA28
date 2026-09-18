@@ -4,9 +4,9 @@ CLI for Tier-1 automated venue enrichment (GTFS + GBFS + OSM + computed cost).
     python -m app.enrich_venue <venue_id> [<venue_id> ...]
     python -m app.enrich_venue --all
 
-Idempotent — see app/services/venue_enrichment.py's module docstring for
-what "idempotent" means here (upsert by external_ref, hand-collected rows
-never touched).
+A brand-new stop is written immediately; a change to an already-known stop
+is drafted into the review queue instead of applied — see
+app/services/venue_enrichment.py's module docstring ("Change detection").
 
 Requires the GTFS static mirror tables to already be populated —
 run `python -m app.ingest.gtfs_static` first if gtfs_stop is empty.
@@ -33,7 +33,8 @@ def _run_one(db: Session, venue: Venue) -> EnrichmentResult | None:
         return None
     print(
         f"  venue {result.venue_id} ({venue.name}): "
-        f"{result.stops_found} stop(s), {result.rows_created} created / {result.rows_updated} updated, "
+        f"{result.stops_found} stop(s) — {result.rows_created} new, {result.rows_unchanged} unchanged, "
+        f"{result.changes_flagged} change(s) flagged for review; "
         f"{result.micromobility_count} micromobility item(s) nearby"
         + (f" — {len(result.errors)} feed error(s): {result.errors}" if result.errors else "")
     )
@@ -69,8 +70,11 @@ def main() -> None:
         db.commit()
 
     total_created = sum(r.rows_created for r in results)
-    total_updated = sum(r.rows_updated for r in results)
-    print(f"Done. {len(results)} venue(s) enriched, {total_created} row(s) created, {total_updated} updated.")
+    total_changes = sum(r.changes_flagged for r in results)
+    print(
+        f"Done. {len(results)} venue(s) enriched, {total_created} new row(s) created, "
+        f"{total_changes} change(s) awaiting review."
+    )
 
 
 if __name__ == "__main__":

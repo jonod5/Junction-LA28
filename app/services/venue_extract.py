@@ -21,10 +21,20 @@ has no reliable way to cite a specific number as "the" price when a page
 lists several by event type, and getting that wrong is a worse failure mode
 than just not attempting it.
 
-Re-running extract_venue() for a venue clears that venue's still-pending
+Re-running extract_venue() for a venue clears that venue's still-outstanding
 drafts first and writes fresh ones — a re-run replaces the draft, it
 doesn't pile up duplicates alongside it. Already-reviewed rows (approved /
 edited / rejected) are untouched; they're the audit trail.
+
+Change detection (v1.7 Phase 3): before drafting a field, extract_venue()
+checks whether the target row (app.services.venue_targets) already has a
+value there. Three outcomes:
+  - no existing value       -> status="pending" (Phase 2's original path)
+  - existing value differs  -> status="pending_change", previous_value set
+    to the stored value — approving this REPLACES it (see
+    app/routers/venue_review.py), it doesn't get refused the way a plain
+    "pending" draft would.
+  - existing value matches  -> nothing drafted at all; already correct.
 """
 
 from __future__ import annotations
@@ -43,6 +53,7 @@ from sqlalchemy.orm import Session
 
 from app.cache import get_redis
 from app.models.venue import Venue, VenueExtraction
+from app.services.venue_targets import find_target_row
 
 log = logging.getLogger(__name__)
 
@@ -200,6 +211,7 @@ class ExtractionResult:
     venue_id: int
     urls_processed: int
     fields_drafted: int
+    changes_flagged: int
     errors: list[str] = field(default_factory=list)
 
 
@@ -236,29 +248,46 @@ def extract_venue(db: Session, venue: Venue, urls: list[str] | None = None) -> E
                 valid["source_url"] = url
                 drafts.append(valid)
 
-    # A re-run replaces the outstanding draft rather than piling up
-    # duplicates next to it. Reviewed rows (approved/edited/rejected) are
+    # A re-run replaces the outstanding drafts rather than piling up
+    # duplicates next to them. Reviewed rows (approved/edited/rejected) are
     # this table's audit trail and are never touched here.
     for stale in db.execute(
-        select(VenueExtraction).where(VenueExtraction.venue_id == venue.id, VenueExtraction.status == "pending")
+        select(VenueExtraction).where(
+            VenueExtraction.venue_id == venue.id, VenueExtraction.status.in_(["pending", "pending_change"]),
+        )
     ).scalars().all():
         db.delete(stale)
     db.flush()
 
     now = datetime.now(timezone.utc)
+    fields_drafted = changes_flagged = 0
     for d in drafts:
+        existing_row = find_target_row(db, venue.id, d["entity_type"])
+        current_value = getattr(existing_row, d["field_name"]) if existing_row else None
+
+        if current_value is not None and str(current_value).strip() == d["value"]:
+            continue  # already correct — nothing to review
+
+        is_change = current_value is not None
         db.add(VenueExtraction(
             venue_id=venue.id,
             entity_type=d["entity_type"],
+            entity_id=existing_row.id if is_change else None,
             field_name=d["field_name"],
             extracted_value=d["value"],
+            previous_value=str(current_value) if is_change else None,
             source_url=d["source_url"],
             source_quote=d["quote"],
             confidence=d["confidence"],
-            status="pending",
+            status="pending_change" if is_change else "pending",
             created_at=now,
         ))
+        if is_change:
+            changes_flagged += 1
+        else:
+            fields_drafted += 1
 
     return ExtractionResult(
-        venue_id=venue.id, urls_processed=len(source_urls), fields_drafted=len(drafts), errors=errors,
+        venue_id=venue.id, urls_processed=len(source_urls),
+        fields_drafted=fields_drafted, changes_flagged=changes_flagged, errors=errors,
     )

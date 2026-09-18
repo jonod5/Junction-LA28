@@ -17,9 +17,27 @@ which must never be auto-marked reviewed.
 
 Idempotent by design: each TransitAccess row this module creates carries
 `external_ref` = the GTFS stop_id it came from. Re-running enrich_venue()
-looks up existing rows by (venue_id, external_ref) and updates them in
-place rather than duplicating. Rows with external_ref=NULL are hand-
-collected and this module never touches them.
+looks up existing rows by (venue_id, external_ref). Rows with
+external_ref=NULL are hand-collected and this module never touches them.
+
+Change detection (v1.7 Phase 3): a brand-new stop (no existing row for its
+external_ref) is still written directly, reviewed=True, the moment it's
+found — that's Tier-1's whole point, feed data is verifiable fact and
+doesn't need a human in the loop. But once a row exists, a re-run no longer
+overwrites it in place: it diffs the freshly-computed fields against what's
+stored, and for anything that materially changed, drafts a "pending_change"
+row in the review queue (app/models/venue.py's VenueExtraction) instead of
+touching the row — same "never silently overwrite verified data" discipline
+Tier-2 extraction follows, applied to Tier-1's own re-runs. A field that
+comes back exactly the same is left alone, no draft created. See
+_diff_transit_fields() for the (deliberately loose) equality used —
+walk-time/cost are compared with a small tolerance so ordinary
+Directions-API jitter doesn't flood the queue with no-op reviews, and
+gbfs_dock_description/transit_notes are excluded from diffing entirely
+(refreshed unconditionally instead) since they embed a live inventory
+count that's expected to differ on every run — diffing those turned out,
+in live testing against real GBFS data, to flag a "change" on nearly every
+re-run, which is exactly the noise this feature exists to prevent.
 
 Cost note: walk time/distance goes through the Directions proxy, which
 means a real (though Redis-cached, 1h TTL) Google Directions call per
@@ -40,7 +58,7 @@ from app.ingest.gbfs import get_nearby as gbfs_get_nearby
 from app.ingest.gbfs import haversine_m
 from app.ingest.osm import nearby_context, summarize_context
 from app.models.gtfs import GtfsRoute, GtfsStop, GtfsStopTime, GtfsTrip
-from app.models.venue import TransitAccess, Venue
+from app.models.venue import TransitAccess, Venue, VenueExtraction
 from app.routers.directions import DirectionsError, fetch_directions
 from app.services.fares import rideshare_estimate
 
@@ -192,12 +210,81 @@ def _walk_time_and_cost(venue_lat: float, venue_lng: float, stop: NearbyStop) ->
     }
 
 
+# Text fields compare exact; numeric fields get a tolerance so ordinary
+# Directions-API/fare-model jitter between runs doesn't get flagged as a
+# "change" needing review — see module docstring.
+#
+# gbfs_dock_description/transit_notes are deliberately NOT in here — they
+# embed a live inventory count ("N shared bike/scooter(s) within 600m"),
+# which is true right now and expected to read differently on every run.
+# That's an operational snapshot, not a verified fact the way a stop's line
+# or mode is, so it's refreshed unconditionally on every run instead
+# (below) rather than diffed — diffing it would flag a "change" on nearly
+# every re-run and defeat the point of change detection.
+_TEXT_DIFF_FIELDS = ("line", "mode", "stop_name", "bus_lines_serving")
+_NUMERIC_DIFF_TOLERANCES = {"walk_time_min": 1, "rideshare_estimate_usd": 2}
+
+
+def _diff_transit_fields(row: TransitAccess, fresh: dict) -> dict[str, tuple]:
+    """{field_name: (old, new)} for fields that materially changed between
+    the stored row and a freshly-recomputed value."""
+    changes: dict[str, tuple] = {}
+    for field_name in _TEXT_DIFF_FIELDS:
+        old, new = getattr(row, field_name), fresh.get(field_name)
+        if (old or None) != (new or None):
+            changes[field_name] = (old, new)
+    for field_name, tolerance in _NUMERIC_DIFF_TOLERANCES.items():
+        old, new = getattr(row, field_name), fresh.get(field_name)
+        if old is None or new is None:
+            if old != new:
+                changes[field_name] = (old, new)
+        elif abs(float(old) - float(new)) > tolerance:
+            changes[field_name] = (old, new)
+    return changes
+
+
+def _queue_transit_change(
+    db: Session, venue_id: int, row: TransitAccess, field_name: str, old_value, new_value, source: str, now: datetime,
+) -> None:
+    """Draft a pending_change row for one field instead of touching `row`
+    directly. Supersedes (deletes) any earlier undecided draft for this
+    exact field first, so re-running enrichment between reviews replaces
+    the draft rather than piling one up per run."""
+    stale = db.execute(
+        select(VenueExtraction).where(
+            VenueExtraction.venue_id == venue_id,
+            VenueExtraction.entity_type == "transit_access",
+            VenueExtraction.entity_id == row.id,
+            VenueExtraction.field_name == field_name,
+            VenueExtraction.status == "pending_change",
+        )
+    ).scalars().first()
+    if stale:
+        db.delete(stale)
+        db.flush()
+
+    db.add(VenueExtraction(
+        venue_id=venue_id,
+        entity_type="transit_access",
+        entity_id=row.id,
+        field_name=field_name,
+        extracted_value=str(new_value) if new_value is not None else "",
+        previous_value=str(old_value) if old_value is not None else None,
+        source_url=source,  # a feed-provenance string, not a literal URL — see VenueExtraction's docstring
+        source_quote=None,
+        confidence=None,
+        status="pending_change",
+        created_at=now,
+    ))
+
+
 @dataclass
 class EnrichmentResult:
     venue_id: int
     stops_found: int
     rows_created: int
-    rows_updated: int
+    rows_unchanged: int
+    changes_flagged: int
     micromobility_count: int
     osm_note: str | None
     errors: list[str] = field(default_factory=list)
@@ -212,8 +299,11 @@ def enrich_venue(
     Populate Tier-1 TransitAccess rows for one venue from GTFS/GBFS/OSM,
     with provenance, and mark the venue as pipeline-reviewed.
 
-    Idempotent: matches existing rows by (venue_id, external_ref=stop_id)
-    and updates them rather than duplicating. Never touches hand-collected
+    Matches existing rows by (venue_id, external_ref=stop_id). A brand-new
+    stop is written directly, reviewed=True immediately. An existing stop
+    whose freshly-computed fields differ from what's stored is NOT
+    overwritten — the diff is drafted into the review queue instead (see
+    module docstring's "Change detection"). Never touches hand-collected
     rows (external_ref IS NULL).
     """
     if venue.lat is None or venue.lng is None:
@@ -245,7 +335,7 @@ def enrich_venue(
         if row.external_ref is not None
     }
 
-    rows_created = rows_updated = 0
+    rows_created = rows_unchanged = changes_flagged = 0
     for stop in stops:
         walk = _walk_time_and_cost(venue_lat, venue_lng, stop)
         # Combine OSM surroundings + micromobility into one prose note —
@@ -258,27 +348,43 @@ def enrich_venue(
             r["short_name"] or r["long_name"] or r["route_id"]
             for r in stop.routes if r["mode"] == "bus"
         ) or None
+        source = f"gtfs_static+{walk['source']}"
+        confidence = "high" if walk["source"] == "directions_api" else "estimated"
+        fresh = {
+            "line": line, "mode": primary_route["mode"] if primary_route else "transit",
+            "stop_name": stop.stop_name, "walk_time_min": walk["walk_time_min"],
+            "bus_lines_serving": bus_lines, "gbfs_dock_description": micro_note,
+            "transit_notes": transit_notes, "rideshare_estimate_usd": walk["rideshare_estimate_usd"],
+        }
 
         row = existing_by_ref.get(stop.stop_id)
         if row is None:
+            # Brand-new stop — Tier-1's fast path, written directly and
+            # reviewed=True immediately. See module docstring.
             row = TransitAccess(venue_id=venue.id, external_ref=stop.stop_id)
+            for field_name, value in fresh.items():
+                setattr(row, field_name, value)
+            row.source = source
+            row.retrieved_at = now
+            row.confidence = confidence
+            row.reviewed = True
             db.add(row)
+            db.flush()
             rows_created += 1
-        else:
-            rows_updated += 1
+            continue
 
-        row.line = line
-        row.mode = primary_route["mode"] if primary_route else "transit"
-        row.stop_name = stop.stop_name
-        row.walk_time_min = walk["walk_time_min"]
-        row.bus_lines_serving = bus_lines
-        row.gbfs_dock_description = micro_note
-        row.transit_notes = transit_notes
-        row.rideshare_estimate_usd = walk["rideshare_estimate_usd"]
-        row.source = f"gtfs_static+{walk['source']}"
-        row.retrieved_at = now
-        row.confidence = "high" if walk["source"] == "directions_api" else "estimated"
-        row.reviewed = True
+        # Live/operational fields refresh unconditionally, no diffing, no
+        # review needed — see the comment above _TEXT_DIFF_FIELDS.
+        row.gbfs_dock_description = fresh["gbfs_dock_description"]
+        row.transit_notes = fresh["transit_notes"]
+
+        diffs = _diff_transit_fields(row, fresh)
+        if not diffs:
+            rows_unchanged += 1
+            continue
+        for field_name, (old, new) in diffs.items():
+            _queue_transit_change(db, venue.id, row, field_name, old, new, source, now)
+        changes_flagged += 1
 
     venue.retrieved_at = now
     venue.confidence = "high"
@@ -288,7 +394,8 @@ def enrich_venue(
         venue_id=venue.id,
         stops_found=len(stops),
         rows_created=rows_created,
-        rows_updated=rows_updated,
+        rows_unchanged=rows_unchanged,
+        changes_flagged=changes_flagged,
         micromobility_count=len(micromobility["items"]),
         osm_note=osm_note,
         errors=errors,

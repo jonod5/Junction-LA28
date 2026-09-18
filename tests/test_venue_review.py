@@ -1,17 +1,22 @@
 """
-Admin review-queue API — /api/venues/review-queue/* (v1.7 Phase 2).
+Admin review-queue API — /api/venues/review-queue/* (v1.7 Phases 2 & 3).
 
 Covers:
   • admin guard (missing/wrong X-Admin-Key)
   • approve copies the extracted value into a real row with provenance, and
     marks the draft approved
-  • approve refuses to overwrite a field that already has a value — the
-    safety net that keeps hand-collected/gold-standard data untouched
+  • approve refuses to overwrite a field that already has a value on a
+    plain "pending" draft — the safety net that keeps hand-collected/
+    gold-standard data untouched
   • edit applies the corrected value instead of the extracted one
   • reject never touches ParkingOption/CurbDropoff/CongestionTdm
   • a decision on an already-reviewed draft 409s
-  • approving one draft supersedes any other still-pending draft for the
-    exact same venue/entity_type/field_name
+  • approving one draft supersedes any other still-outstanding draft for
+    the exact same venue/entity_type/field_name
+  • pending_change (Phase 3): approve DOES overwrite, but only if the field
+    still matches previous_value — otherwise it's refused as stale
+  • transit_access drafts resolve their target row by entity_id, not the
+    parking_option-style lazy lookup
 """
 
 import os
@@ -209,3 +214,87 @@ def test_approving_one_draft_supersedes_conflicting_pending_draft(client):
     db = client.session_local()
     second = db.get(VenueExtraction, second_id)
     assert second.status == "superseded"
+
+
+def test_pending_change_approve_overwrites_when_not_stale(client):
+    db = client.session_local()
+    row = ParkingOption(venue_id=1, lot_name=None, price_notes="$15", source="hand-collected", reviewed=True)
+    db.add(row)
+    db.commit()
+    row_id = row.id
+    db.close()
+
+    draft_id = _seed_draft(
+        client, extracted_value="$20", previous_value="$15", status="pending_change", entity_id=row_id,
+    )
+    resp = client.post(
+        f"/api/venues/review-queue/{draft_id}/decision",
+        json={"decision": "approve"},
+        headers=ADMIN_HEADERS,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "approved"
+
+    db = client.session_local()
+    row = db.get(ParkingOption, row_id)
+    assert row.price_notes == "$20"
+
+
+def test_pending_change_approve_refused_when_stale(client):
+    db = client.session_local()
+    row = ParkingOption(venue_id=1, lot_name=None, price_notes="$18", source="hand-collected", reviewed=True)
+    db.add(row)
+    db.commit()
+    row_id = row.id
+    db.close()
+
+    # Drafted against "$15", but the row is actually "$18" now — something
+    # else changed it (another approval, a manual edit) since this draft
+    # was created.
+    draft_id = _seed_draft(
+        client, extracted_value="$20", previous_value="$15", status="pending_change", entity_id=row_id,
+    )
+    resp = client.post(
+        f"/api/venues/review-queue/{draft_id}/decision",
+        json={"decision": "approve"},
+        headers=ADMIN_HEADERS,
+    )
+    assert resp.status_code == 409
+
+    db = client.session_local()
+    row = db.get(ParkingOption, row_id)
+    assert row.price_notes == "$18"
+
+
+def test_transit_access_change_resolves_target_by_entity_id(client):
+    db = client.session_local()
+    stop = TransitAccess(
+        venue_id=1, external_ref="stop-1", line="40", source="gtfs_static+directions_api", reviewed=True,
+    )
+    db.add(stop)
+    db.commit()
+    stop_id = stop.id
+    db.close()
+
+    draft_id = _seed_draft(
+        client, entity_type="transit_access", entity_id=stop_id, field_name="line",
+        extracted_value="40, 204", previous_value="40", status="pending_change",
+        source_url="gtfs_static+directions_api", source_quote=None, confidence=None,
+    )
+    resp = client.post(
+        f"/api/venues/review-queue/{draft_id}/decision",
+        json={"decision": "approve"},
+        headers=ADMIN_HEADERS,
+    )
+    assert resp.status_code == 200
+
+    db = client.session_local()
+    stop = db.get(TransitAccess, stop_id)
+    assert stop.line == "40, 204"
+
+
+def test_default_list_includes_pending_change(client):
+    _seed_draft(client, status="pending_change", previous_value="$15", entity_id=None)
+    resp = client.get("/api/venues/review-queue", headers=ADMIN_HEADERS)
+    assert resp.status_code == 200
+    assert [r["status"] for r in resp.json()] == ["pending_change"]

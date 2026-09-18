@@ -51,6 +51,7 @@ from app.models.venue import (
 from app.schemas import (
     CongestionOut,
     CurbOut,
+    GamesTimeOfficialOut,
     ParkingOut,
     TransitOut,
     VenueDetailOut,
@@ -257,6 +258,20 @@ def get_venue(
             ),
         )
 
+    # Tier-3 scaffold — always present once seeded, always empty until LA28
+    # publishes official data. Not translated: every field is None or the
+    # literal source flag, nothing to translate yet.
+    official: GamesTimeOfficialOut | None = None
+    if venue.games_time_official:
+        go = venue.games_time_official
+        official = GamesTimeOfficialOut(
+            car_restricted_zones=go.car_restricted_zones,
+            designated_pudo=go.designated_pudo,
+            shuttles=go.shuttles,
+            arrival_windows=go.arrival_windows,
+            source=go.source,
+        )
+
     return VenueDetailOut(
         id=venue.id,
         name=venue.name,
@@ -277,4 +292,5 @@ def get_venue(
         transit_accesses=transit,
         curb_dropoffs=curb,
         congestion_tdm=cong,
+        games_time_official=official,
     )

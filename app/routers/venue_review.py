@@ -1,31 +1,34 @@
 """
-Admin review queue for Tier-2 LLM extractions (v1.7 Phase 2).
+Admin review queue for Tier-1 change detection and Tier-2 extraction
+(v1.7 Phases 2-3).
 
   GET  /api/venues/review-queue                — list drafts (default: pending)
   POST /api/venues/review-queue/{id}/decision   — approve / edit / reject a draft
 
-This is the only code path allowed to write an extracted value into
-ParkingOption / CurbDropoff / CongestionTdm — see VenueExtraction's
-docstring in app/models/venue.py. app/services/venue_extract.py only ever
-writes to the queue table itself.
+This is the only code path allowed to write into ParkingOption /
+CurbDropoff / CongestionTdm / TransitAccess on a draft's behalf — see
+VenueExtraction's docstring in app/models/venue.py. Neither
+app/services/venue_extract.py (Tier-2) nor app/services/venue_enrichment.py
+(Tier-1 change detection) ever writes to those tables directly; both only
+ever write to the queue table.
 
-Target-row resolution (_target_row):
-- parking_option is genuinely many-per-venue (one row per lot/zone), so a
-  draft targets the venue's "general" row — the one with lot_name IS NULL —
-  creating it if none exists yet. Hand-collected lots always have a real
-  lot_name, so this never collides with them.
-- curb_dropoff and congestion_tdm are one-per-venue by convention (the
-  latter enforced by a DB unique constraint), so a draft targets that
-  venue's single row, creating it if none exists yet.
+Target-row resolution is shared with venue_extract.py in
+app/services/venue_targets.py — see that module's docstring for how each
+entity_type resolves its row.
 
-Overwrite protection (_apply_field): regardless of how the target row was
-resolved, a draft may only be applied to a field that is currently empty.
-This is what actually keeps hand-collected gold-standard data safe — if the
-field already holds a value (hand-collected or previously approved), the
-decision is refused with 409 rather than silently overwriting it. The
-reviewer's option in that case is to reject the draft; correcting an
-already-populated field is a deliberate action outside this queue, not
-something an approve/edit click should do.
+Two kinds of decision, by draft.status:
+- "pending" (previous_value is None) — a field with no existing value.
+  _apply_field refuses with 409 if the target field somehow already has
+  one; this is what keeps hand-collected gold-standard data safe from a
+  first-time draft landing on the wrong row.
+- "pending_change" (previous_value is set) — a field that already had a
+  value, and the pipeline computed a different one (Tier-1 re-enrichment,
+  or Tier-2 re-extraction against an already-approved field). Approving
+  this is EXPECTED to overwrite — that's the point — but only if the field
+  still equals previous_value; if something else changed it since this
+  draft was drafted, the decision is refused with 409 and the reviewer is
+  told to re-run detection rather than apply a decision made against
+  stale context.
 
 Admin guard mirrors app/routers/survey.py's X-Admin-Key pattern, with its
 own env var (VENUE_ADMIN_KEY) since venue-data review and survey-export are
@@ -44,18 +47,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models.venue import CongestionTdm, CurbDropoff, ParkingOption, VenueExtraction
+from app.models.venue import VenueExtraction
 from app.schemas import ReviewDecisionIn, VenueExtractionOut
+from app.services.venue_targets import get_or_create_target_row
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/venues/review-queue", tags=["venue-review"])
 
 _VALID_DECISIONS = {"approve", "edit", "reject"}
-_ENTITY_MODELS = {
-    "parking_option": ParkingOption,
-    "curb_dropoff": CurbDropoff,
-    "congestion_tdm": CongestionTdm,
-}
+_PENDING_STATUSES = {"pending", "pending_change"}
 
 
 def _check_admin_key(x_admin_key: str | None) -> None:
@@ -89,37 +89,38 @@ def list_review_queue(
     query = select(VenueExtraction)
     if venue_id is not None:
         query = query.where(VenueExtraction.venue_id == venue_id)
-    if status != "all":
+    if status == "pending":
+        # The two "needs a decision" states, shown together by default —
+        # see module docstring for what distinguishes them.
+        query = query.where(VenueExtraction.status.in_(_PENDING_STATUSES))
+    elif status != "all":
         query = query.where(VenueExtraction.status == status)
     query = query.order_by(VenueExtraction.created_at.desc())
 
     return db.execute(query).scalars().all()
 
 
-def _target_row(db: Session, venue_id: int, entity_type: str):
-    model = _ENTITY_MODELS[entity_type]
-    if entity_type == "parking_option":
-        row = db.execute(
-            select(ParkingOption).where(ParkingOption.venue_id == venue_id, ParkingOption.lot_name.is_(None))
-        ).scalars().first()
-    else:
-        row = db.execute(select(model).where(model.venue_id == venue_id)).scalars().first()
-
-    if row is None:
-        kwargs: dict = {"venue_id": venue_id}
-        if entity_type in ("parking_option", "curb_dropoff"):
-            # source is NOT NULL on these two — a placeholder until the
-            # first field is actually applied fills it in below.
-            kwargs["source"] = "llm_extract:pending"
-        row = model(**kwargs)
-        db.add(row)
-        db.flush()
-    return row
-
-
-def _apply_field(row, field_name: str, value: str, source_url: str, confidence: Decimal | None, now: datetime) -> None:
+def _apply_field(
+    row, field_name: str, value: str, source_url: str | None, confidence: Decimal | None,
+    now: datetime, expected_previous: str | None,
+) -> None:
     current = getattr(row, field_name)
-    if current not in (None, ""):
+    current_str = str(current) if current is not None else None
+
+    if expected_previous is not None:
+        # A sanctioned change (status="pending_change") — overwriting is
+        # the point, but only if nothing else touched this field since the
+        # draft was created.
+        if current_str != expected_previous:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"{field_name} no longer matches what this change was drafted against "
+                    f"(expected {expected_previous!r}, found {current_str!r}) — re-run detection "
+                    "and re-review instead of applying a stale decision."
+                ),
+            )
+    elif current not in (None, ""):
         raise HTTPException(
             status_code=409,
             detail=(
@@ -127,11 +128,12 @@ def _apply_field(row, field_name: str, value: str, source_url: str, confidence: 
                 "(possibly hand-collected) data. Reject this draft or edit the row directly instead."
             ),
         )
+
     setattr(row, field_name, value)
     # Row-level provenance only, not per-field — see module docstring on the
     # granularity tradeoff. The queue row (with its own source_url/quote)
     # stays the permanent per-field record regardless.
-    if not row.source or row.source == "llm_extract:pending":
+    if source_url and (not row.source or row.source == "llm_extract:pending"):
         row.source = f"llm_extract:{source_url}"
     row.retrieved_at = now
     row.confidence = _confidence_label(confidence)
@@ -153,7 +155,7 @@ def decide(
     draft = db.get(VenueExtraction, extraction_id)
     if not draft:
         raise HTTPException(status_code=404, detail=f"Extraction {extraction_id} not found")
-    if draft.status != "pending":
+    if draft.status not in _PENDING_STATUSES:
         raise HTTPException(status_code=409, detail=f"Extraction {extraction_id} was already {draft.status}")
 
     now = datetime.now(timezone.utc)
@@ -174,22 +176,24 @@ def decide(
     else:
         value_to_apply = draft.extracted_value
 
-    row = _target_row(db, draft.venue_id, draft.entity_type)
-    _apply_field(row, draft.field_name, value_to_apply, draft.source_url, draft.confidence, now)
+    row = get_or_create_target_row(db, draft.venue_id, draft.entity_type, draft.entity_id)
+    _apply_field(row, draft.field_name, value_to_apply, draft.source_url, draft.confidence, now, draft.previous_value)
+    if draft.entity_id is None:
+        draft.entity_id = row.id
 
     draft.status = "edited" if body.decision == "edit" else "approved"
     draft.reviewed_at = now
     draft.reviewed_by = body.reviewed_by
 
-    # Any other still-pending draft for this exact field is now moot — this
-    # decision is the one that won.
+    # Any other still-outstanding draft for this exact field is now moot —
+    # this decision is the one that won.
     for other in db.execute(
         select(VenueExtraction).where(
             VenueExtraction.id != draft.id,
             VenueExtraction.venue_id == draft.venue_id,
             VenueExtraction.entity_type == draft.entity_type,
             VenueExtraction.field_name == draft.field_name,
-            VenueExtraction.status == "pending",
+            VenueExtraction.status.in_(_PENDING_STATUSES),
         )
     ).scalars().all():
         other.status = "superseded"

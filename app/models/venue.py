@@ -74,6 +74,12 @@ class Venue(Base):
     confidence: Mapped[str | None] = mapped_column(String(20))
     reviewed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
+    # ── Gold-standard flag (v1.7 Phase 3) ───────────────────────────────────
+    # Marks the hand-collected venues app/validate_pipeline.py checks the
+    # pipeline's output against. Set once at collection time, not something
+    # the pipeline itself ever writes.
+    is_gold_standard: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
     # Relationships
     parking_options: Mapped[list["ParkingOption"]] = relationship(
         back_populates="venue", cascade="all, delete-orphan"
@@ -92,6 +98,9 @@ class Venue(Base):
     )
     extractions: Mapped[list["VenueExtraction"]] = relationship(
         back_populates="venue", cascade="all, delete-orphan"
+    )
+    games_time_official: Mapped["GamesTimeOfficial | None"] = relationship(
+        back_populates="venue", cascade="all, delete-orphan", uselist=False
     )
 
 
@@ -265,24 +274,42 @@ class VenueSource(Base):
 
 class VenueExtraction(Base):
     """
-    Tier-2 review queue — one row per (venue, field) that
-    app.services.venue_extract drafted from a source page. This table is
-    the ONLY thing extraction writes to; nothing here is treated as fact
-    until a human decision via app/routers/venue_review.py copies a value
-    into ParkingOption / CurbDropoff / CongestionTdm (approve, or edit then
-    approve). Rejected and approved rows are kept as history, not deleted —
-    this table IS the audit trail.
+    The review queue — one row per (venue, field) drafted either by Tier-2
+    extraction (app.services.venue_extract, from a source page) or by
+    Tier-1 change detection (app.services.venue_enrichment, when a re-run's
+    freshly-computed GTFS/GBFS/OSM values differ from what's stored). This
+    table is the ONLY thing either writes to; nothing here is treated as
+    fact until a human decision via app/routers/venue_review.py copies a
+    value into ParkingOption / CurbDropoff / CongestionTdm / TransitAccess
+    (approve, or edit then approve). Rejected and approved rows are kept as
+    history, not deleted — this table IS the audit trail.
 
     entity_type is which table the field belongs to ("parking_option" /
-    "curb_dropoff" / "congestion_tdm"); unlike VenueTranslation there's no
-    entity_id, because at draft time the target row may not exist yet — see
-    app/routers/venue_review.py for how a decision resolves which row to
-    write to for each entity_type.
+    "curb_dropoff" / "congestion_tdm" / "transit_access") — and, given the
+    current pipeline, also tells you which tier drafted it: transit_access
+    only ever comes from Tier-1, the other three only ever from Tier-2.
+
+    Two shapes of draft, distinguished by status and previous_value:
+      - status="pending", previous_value=None — a field with no existing
+        value. entity_id is usually None too (see
+        app/services/venue_targets.py — parking_option/curb_dropoff/
+        congestion_tdm resolve their target row lazily, since it may not
+        exist yet; transit_access always has one, because Tier-1 change
+        detection only runs against a row that already exists).
+      - status="pending_change", previous_value=<the stored value> — a
+        field that already has a value, and the pipeline computed a
+        different one. Approving this REPLACES the old value (unlike a
+        plain "pending" draft, which is refused if the field somehow
+        already has one) — see app/routers/venue_review.py's staleness
+        check, which re-verifies the field still equals previous_value at
+        decision time before applying.
 
     source_quote is the exact supporting text the LLM was instructed to
-    cite for extracted_value — see app/services/venue_extract.py's system
-    prompt. A field the LLM couldn't support with a quote is never written
-    here at all, not written with a null value.
+    cite for extracted_value, for Tier-2 drafts — see
+    app/services/venue_extract.py's system prompt. Tier-1 drafts have no
+    prose to quote and leave it NULL; source_url is used loosely there too,
+    holding the pipeline's feed-provenance string (e.g.
+    "gtfs_static+directions_api") rather than a literal URL.
     """
 
     __tablename__ = "venue_extraction"
@@ -293,15 +320,21 @@ class VenueExtraction(Base):
     )
 
     entity_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    # The specific target row, when known at draft time — see class
+    # docstring. NULL means "resolve it when a decision is applied."
+    entity_id: Mapped[int | None] = mapped_column(Integer)
     field_name: Mapped[str] = mapped_column(String(50), nullable=False)
     extracted_value: Mapped[str] = mapped_column(Text, nullable=False)
-    source_url: Mapped[str] = mapped_column(String(500), nullable=False)
-    source_quote: Mapped[str] = mapped_column(Text, nullable=False)
+    # The value this draft proposes to replace — NULL for a brand-new
+    # field. See class docstring's "two shapes of draft."
+    previous_value: Mapped[str | None] = mapped_column(Text)
+    source_url: Mapped[str | None] = mapped_column(String(500))
+    source_quote: Mapped[str | None] = mapped_column(Text)
     confidence: Mapped[Decimal | None] = mapped_column(Numeric(4, 3))
 
-    # pending -> approved | edited | rejected | superseded (a later draft for
-    # the same venue/entity_type/field_name was approved instead — see
-    # app/routers/venue_review.py's decision endpoint).
+    # pending | pending_change -> approved | edited | rejected | superseded
+    # (a later draft for the same venue/entity_type/field_name was decided
+    # first — see app/routers/venue_review.py's decision endpoint).
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
     corrected_value: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
@@ -309,6 +342,34 @@ class VenueExtraction(Base):
     reviewed_by: Mapped[str | None] = mapped_column(String(100))
 
     venue: Mapped["Venue"] = relationship(back_populates="extractions")
+
+
+class GamesTimeOfficial(Base):
+    """
+    Tier-3 scaffold — one row per venue for Games-time official LA28 data
+    (car-restricted zones, designated PUDO, shuttles, arrival windows).
+    Nothing populates these fields yet; this table exists so the app can
+    transparently show "awaiting official LA28 data" rather than nothing
+    at all. source defaults to "official_pending" and stays that way until
+    a real ingestion path exists — do not populate or invent values here.
+    """
+
+    __tablename__ = "games_time_official"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    venue_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("venue.id", ondelete="CASCADE"), nullable=False, unique=True
+    )
+
+    car_restricted_zones: Mapped[str | None] = mapped_column(Text)
+    designated_pudo: Mapped[str | None] = mapped_column(Text)
+    shuttles: Mapped[str | None] = mapped_column(Text)
+    arrival_windows: Mapped[str | None] = mapped_column(Text)
+
+    source: Mapped[str] = mapped_column(String(500), nullable=False, default="official_pending")
+    retrieved_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+    venue: Mapped["Venue"] = relationship(back_populates="games_time_official")
 
 
 class VenueTranslation(Base):

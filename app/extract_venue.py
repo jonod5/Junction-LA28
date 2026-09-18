@@ -36,7 +36,8 @@ def _run_one(db: Session, venue: Venue) -> ExtractionResult | None:
         return None
     print(
         f"  venue {result.venue_id} ({venue.name}): "
-        f"{result.urls_processed} url(s) processed, {result.fields_drafted} field(s) drafted for review"
+        f"{result.urls_processed} url(s) processed, {result.fields_drafted} new field(s), "
+        f"{result.changes_flagged} change(s) flagged for review"
         + (f" — {len(result.errors)} error(s): {result.errors}" if result.errors else "")
     )
     return result
@@ -68,7 +69,11 @@ def main() -> None:
         db.commit()
 
     total_fields = sum(r.fields_drafted for r in results)
-    print(f"Done. {len(results)} venue(s) processed, {total_fields} field(s) awaiting review.")
+    total_changes = sum(r.changes_flagged for r in results)
+    print(
+        f"Done. {len(results)} venue(s) processed, {total_fields} new field(s) and "
+        f"{total_changes} change(s) awaiting review."
+    )
 
 
 if __name__ == "__main__":

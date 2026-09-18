@@ -155,10 +155,14 @@ class VenueExtractionOut(BaseModel):
     id: int
     venue_id: int
     entity_type: str
+    entity_id: int | None
     field_name: str
     extracted_value: str
-    source_url: str
-    source_quote: str
+    # Set only for a "pending_change" draft — the value this one proposes
+    # to replace. None for a brand-new field ("pending").
+    previous_value: str | None
+    source_url: str | None
+    source_quote: str | None
     confidence: float | None
     status: str
     corrected_value: str | None
@@ -172,6 +176,19 @@ class ReviewDecisionIn(BaseModel):
     decision: str  # "approve" | "edit" | "reject"
     corrected_value: str | None = None
     reviewed_by: str | None = None
+
+
+class GamesTimeOfficialOut(BaseModel):
+    """Tier-3 scaffold — every field is null until LA28 publishes official
+    data; `source` stays "official_pending" until then. See
+    GamesTimeOfficial's docstring in app/models/venue.py."""
+    model_config = ConfigDict(from_attributes=True)
+
+    car_restricted_zones: str | None
+    designated_pudo: str | None
+    shuttles: str | None
+    arrival_windows: str | None
+    source: str
 
 
 class VenueDetailOut(BaseModel):
@@ -194,3 +211,4 @@ class VenueDetailOut(BaseModel):
     transit_accesses: list[TransitOut] = []
     curb_dropoffs: list[CurbOut] = []
     congestion_tdm: CongestionOut | None = None
+    games_time_official: GamesTimeOfficialOut | None = None

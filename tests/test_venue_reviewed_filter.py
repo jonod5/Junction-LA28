@@ -19,6 +19,7 @@ from app.db import Base, get_db  # noqa: E402
 from app.models.venue import (  # noqa: E402
     CongestionTdm,
     CurbDropoff,
+    GamesTimeOfficial,
     ParkingOption,
     TransitAccess,
     Venue,
@@ -32,7 +33,7 @@ def client():
         engine,
         tables=[
             Venue.__table__, ParkingOption.__table__, CongestionTdm.__table__,
-            TransitAccess.__table__, CurbDropoff.__table__,
+            TransitAccess.__table__, CurbDropoff.__table__, GamesTimeOfficial.__table__,
         ],
     )
     TestSessionLocal = sessionmaker(bind=engine)
@@ -59,7 +60,9 @@ def client():
 
     from app.main import app
     app.dependency_overrides[get_db] = override_get_db
-    yield TestClient(app)
+    c = TestClient(app)
+    c.session_local = TestSessionLocal
+    yield c
     app.dependency_overrides.clear()
 
 
@@ -75,3 +78,26 @@ def test_reviewed_row_still_includes_new_rideshare_field(client):
     resp = client.get("/api/venues/1")
     reviewed = next(t for t in resp.json()["transit_accesses"] if t["line"] == "Reviewed Line")
     assert "rideshare_estimate_usd" in reviewed
+
+
+def test_no_games_time_official_row_returns_null(client):
+    resp = client.get("/api/venues/1")
+    assert resp.json()["games_time_official"] is None
+
+
+def test_games_time_official_scaffold_surfaces_pending_state(client):
+    # Seed a scaffold row the same way seed_venues.py does — venue_id only,
+    # everything else defaulted.
+    db = client.session_local()
+    db.add(GamesTimeOfficial(venue_id=1))
+    db.commit()
+    db.close()
+
+    resp = client.get("/api/venues/1")
+    official = resp.json()["games_time_official"]
+    assert official is not None
+    assert official["source"] == "official_pending"
+    assert official["car_restricted_zones"] is None
+    assert official["designated_pudo"] is None
+    assert official["shuttles"] is None
+    assert official["arrival_windows"] is None

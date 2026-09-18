@@ -28,6 +28,7 @@ from app.db import Base, get_db  # noqa: E402
 from app.models.venue import (  # noqa: E402
     CongestionTdm,
     CurbDropoff,
+    GamesTimeOfficial,
     ParkingOption,
     TransitAccess,
     Venue,
@@ -43,7 +44,7 @@ def client():
         engine,
         tables=[
             Venue.__table__, ParkingOption.__table__, CongestionTdm.__table__,
-            TransitAccess.__table__, CurbDropoff.__table__, VenueTranslation.__table__,
+            TransitAccess.__table__, CurbDropoff.__table__, VenueTranslation.__table__, GamesTimeOfficial.__table__,
         ],
     )
     TestSessionLocal = sessionmaker(bind=engine)
