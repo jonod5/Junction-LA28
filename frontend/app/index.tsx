@@ -1,5 +1,5 @@
-// Landing screen: what Junction is, plus entry points to the planner, the
-// SP survey and the learn-more page. Sign-in lives in the global AccountMenu.
+// Landing screen (the app's entry route): what Junction is, plus entry
+// points to the planner, the SP survey, sign-in and the learn-more page.
 import { Feather } from '@expo/vector-icons';
 import { useRouter, type Href } from 'expo-router';
 import React from 'react';
@@ -15,48 +15,73 @@ import {
 
 import { BrandHeader, CONTENT_MAX_WIDTH } from '@/components/BrandHeader';
 import { brand, colors, radius, spacing } from '@/constants/theme';
+import { useAuth } from '@/lib/auth';
 
 const SCREENSHOT = require('@/assets/images/landing/app-screenshot.png');
 const HUMAN_LAB = require('@/assets/images/landing/human-lab.png');
 
 type ActionCard = {
-  href: Href;
+  /** A route to open, or 'sign-in' to start Google sign-in in place. */
+  target: Href | 'sign-in';
   icon: React.ComponentProps<typeof Feather>['name'];
   title: string;
   body: string;
   cta: string;
-  variant: 'primary' | 'secondary' | 'outline';
+  variant: 'primary' | 'secondary' | 'plain' | 'outline';
 };
 
-const ACTIONS: ActionCard[] = [
-  {
-    href: '/',
-    icon: 'map',
-    title: 'Open the map',
-    body: 'Compare routes to any venue.',
-    cta: 'Start planning →',
-    variant: 'primary',
-  },
-  {
-    href: '/survey',
-    icon: 'clipboard',
-    title: 'Take the survey',
-    body: 'Help UCLA research Games travel.',
-    cta: 'Begin survey →',
-    variant: 'secondary',
-  },
-  {
-    href: '/learn-more',
-    icon: 'info',
-    title: 'How it works',
-    body: 'Features, modes and apps to get.',
-    cta: 'Learn more →',
-    variant: 'outline',
-  },
-];
+const MAP: ActionCard = {
+  target: '/home',
+  icon: 'map',
+  title: 'Open the map',
+  body: 'Compare routes to any venue.',
+  cta: 'Start planning →',
+  variant: 'primary',
+};
 
-export default function WelcomeScreen() {
+const SURVEY: ActionCard = {
+  target: '/survey',
+  icon: 'clipboard',
+  title: 'Take the survey',
+  body: 'Help UCLA research Games travel.',
+  cta: 'Begin survey →',
+  variant: 'secondary',
+};
+
+const SIGN_IN: ActionCard = {
+  target: 'sign-in',
+  icon: 'log-in',
+  title: 'Sign in',
+  body: 'Save and revisit your trips.',
+  cta: 'Continue with Google →',
+  variant: 'plain',
+};
+
+// Signed-in users get a shortcut to their trips in the same slot.
+const MY_TRIPS: ActionCard = {
+  target: '/itineraries',
+  icon: 'bookmark',
+  title: 'My trips',
+  body: 'Your saved itineraries.',
+  cta: 'View trips →',
+  variant: 'plain',
+};
+
+const LEARN_MORE: ActionCard = {
+  target: '/learn-more',
+  icon: 'info',
+  title: 'How it works',
+  body: 'Features, modes and apps to get.',
+  cta: 'Learn more →',
+  variant: 'outline',
+};
+
+export default function LandingScreen() {
   const router = useRouter();
+  const { user, isConfigured, signInWithGoogle } = useAuth();
+  // Hide the account slot entirely when no Supabase project is configured.
+  const accountCard = !isConfigured ? null : user ? MY_TRIPS : SIGN_IN;
+  const actions = [MAP, SURVEY, accountCard, LEARN_MORE].filter((a): a is ActionCard => a !== null);
   const { width } = useWindowDimensions();
   const wide = width >= 860;
 
@@ -88,12 +113,12 @@ export default function WelcomeScreen() {
       </View>
 
       <View style={[styles.container, styles.actions]}>
-        {ACTIONS.map((a) => {
+        {actions.map((a) => {
           const v = variantStyles[a.variant];
           return (
             <Pressable
               key={a.title}
-              onPress={() => router.push(a.href)}
+              onPress={() => (a.target === 'sign-in' ? signInWithGoogle() : router.push(a.target))}
               accessibilityRole="link"
               style={({ pressed }) => [styles.card, v.card, pressed && styles.cardPressed]}
             >
@@ -135,6 +160,13 @@ const variantStyles = {
     titleColor: '#FFFFFF',
     bodyColor: '#F3E8FF',
     ctaColor: '#FFFFFF',
+  },
+  plain: {
+    card: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
+    iconColor: colors.primary,
+    titleColor: colors.foreground,
+    bodyColor: colors.muted,
+    ctaColor: colors.primary,
   },
   outline: {
     card: { backgroundColor: colors.surface, borderWidth: 2, borderColor: brand.gold },

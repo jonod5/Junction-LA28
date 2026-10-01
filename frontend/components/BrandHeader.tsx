@@ -1,4 +1,4 @@
-// Top bar for the marketing-style screens (welcome, learn-more). The right
+// Top bar for the marketing-style screens (landing, learn-more). The right
 // side is left empty on purpose: the global AccountMenu (Survey + Sign in /
 // avatar) is docked top-right over every screen and fills that slot.
 import { Feather } from '@expo/vector-icons';
@@ -11,7 +11,7 @@ import { brand, colors, spacing } from '@/constants/theme';
 export const CONTENT_MAX_WIDTH = 1120;
 
 interface Props {
-  /** Show a back link to the welcome screen instead of the home link. */
+  /** Show a back link to the landing screen instead of the home link. */
   back?: boolean;
 }
 
@@ -23,7 +23,7 @@ export function BrandHeader({ back }: Props) {
       <View style={styles.inner}>
         {back ? (
           <Pressable
-            onPress={() => (router.canGoBack() ? router.back() : router.replace('/welcome'))}
+            onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
             accessibilityRole="link"
             style={styles.brand}
           >
@@ -32,7 +32,7 @@ export function BrandHeader({ back }: Props) {
           </Pressable>
         ) : (
           <Pressable
-            onPress={() => router.replace('/welcome')}
+            onPress={() => router.replace('/')}
             accessibilityRole="link"
             accessibilityLabel="Junction home"
             style={styles.brand}

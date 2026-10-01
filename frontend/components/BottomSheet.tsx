@@ -1,6 +1,6 @@
 // Mobile bottom sheet — Google Maps / Uber style. Web-only (raw DOM +
 // touch/mouse events, not React Native gesture primitives) since this is
-// only ever mounted from index.web.tsx's mobile branch; the map behind it
+// only ever mounted from home.web.tsx's mobile branch; the map behind it
 // stays full-bleed and interactive at every snap state except 'full'.
 //
 // Deliberately NOT using the Pointer Events API / setPointerCapture: iOS

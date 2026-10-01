@@ -130,7 +130,7 @@ export default function RoutesScreen() {
           <Text style={styles.emptyTitle}>No routes yet</Text>
           <Text style={styles.emptyHint}>Add at least 2 venues in the Planner tab</Text>
           <Pressable
-            onPress={() => router.push('/')}
+            onPress={() => router.push('/home')}
             accessibilityRole="button"
             style={({ pressed }) => [styles.goBtn, pressed && { opacity: 0.8 }]}
           >

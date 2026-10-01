@@ -184,7 +184,7 @@ export default function LearnMoreScreen() {
             <Text style={styles.ctaTitle}>READY TO PLAN?</Text>
             <Text style={styles.ctaBody}>Pick a venue and see your options in seconds.</Text>
           </View>
-          <Pressable onPress={() => router.push('/')} accessibilityRole="link" style={styles.ctaBtn}>
+          <Pressable onPress={() => router.push('/home')} accessibilityRole="link" style={styles.ctaBtn}>
             <Text style={styles.ctaBtnText}>Open the map →</Text>
           </Pressable>
         </View>
