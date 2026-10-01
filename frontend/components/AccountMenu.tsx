@@ -5,7 +5,7 @@
 // planner's own floating panel is top-left, and VenueDetailPanel is shifted
 // down (top:64) to leave this corner free.
 import { Feather } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { usePathname, useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -42,10 +42,16 @@ export function AccountMenu() {
   const router = useRouter();
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
+  const pathname = usePathname();
+
+  // The map keeps its corner clear: survey and sign-in are reached from the
+  // landing page. A signed-in user still gets the avatar menu below.
+  const onMap = pathname === '/home';
 
   // No Supabase project configured — the account half of this menu has
   // nothing to do, but the survey link still needs to show.
   if (!isConfigured || loading) {
+    if (onMap) return null;
     return (
       <View style={styles.wrap}>
         <SurveyButton router={router} />
@@ -54,6 +60,7 @@ export function AccountMenu() {
   }
 
   if (!user) {
+    if (onMap) return null;
     return (
       <View style={styles.wrap}>
         <SurveyButton router={router} />
