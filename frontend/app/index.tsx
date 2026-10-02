@@ -1,5 +1,5 @@
 // Landing screen (the app's entry route): what Junction is, entry points to
-// the planner, the SP survey and sign-in, and the learn-more content below.
+// the planner and the SP survey, and the learn-more content below.
 import { Feather } from '@expo/vector-icons';
 import { useRouter, type Href } from 'expo-router';
 import React, { useRef } from 'react';
@@ -26,7 +26,6 @@ import {
   useRevealHost,
 } from '@/components/landing/motion';
 import { brand, colors, radius, spacing } from '@/constants/theme';
-import { useAuth } from '@/lib/auth';
 
 const SCREENSHOT = require('@/assets/images/landing/app-screenshot.png');
 const HUMAN_LAB = require('@/assets/images/landing/human-lab.png');
@@ -42,14 +41,13 @@ const EXAMPLE_TRIPS = [
 const JUMP_OFFSET = 64 + spacing.md;
 
 type ActionCard = {
-  /** A route to open, 'sign-in' to start Google sign-in in place, or
-   * 'learn' to scroll down to the learn-more content. */
-  target: Href | 'sign-in' | 'learn';
+  /** A route to open, or 'learn' to scroll down to the learn-more content. */
+  target: Href | 'learn';
   icon: React.ComponentProps<typeof Feather>['name'];
   title: string;
   body: string;
   cta: string;
-  variant: 'primary' | 'secondary' | 'plain' | 'outline';
+  variant: 'primary' | 'secondary' | 'outline';
 };
 
 const MAP: ActionCard = {
@@ -70,25 +68,6 @@ const SURVEY: ActionCard = {
   variant: 'secondary',
 };
 
-const SIGN_IN: ActionCard = {
-  target: 'sign-in',
-  icon: 'log-in',
-  title: 'Sign in',
-  body: 'Save and revisit your trips.',
-  cta: 'Continue with Google →',
-  variant: 'plain',
-};
-
-// Signed-in users get a shortcut to their trips in the same slot.
-const MY_TRIPS: ActionCard = {
-  target: '/itineraries',
-  icon: 'bookmark',
-  title: 'My trips',
-  body: 'Your saved itineraries.',
-  cta: 'View trips →',
-  variant: 'plain',
-};
-
 const LEARN_MORE: ActionCard = {
   target: 'learn',
   icon: 'info',
@@ -100,10 +79,7 @@ const LEARN_MORE: ActionCard = {
 
 export default function LandingScreen() {
   const router = useRouter();
-  const { user, isConfigured, signInWithGoogle } = useAuth();
-  // Hide the account slot entirely when no Supabase project is configured.
-  const accountCard = !isConfigured ? null : user ? MY_TRIPS : SIGN_IN;
-  const actions = [MAP, SURVEY, accountCard, LEARN_MORE].filter((a): a is ActionCard => a !== null);
+  const actions = [MAP, SURVEY, LEARN_MORE];
   const { width } = useWindowDimensions();
   const wide = width >= 860;
 
@@ -118,8 +94,7 @@ export default function LandingScreen() {
   const openMap = () => router.push('/home');
 
   const onAction = (a: ActionCard) => {
-    if (a.target === 'sign-in') signInWithGoogle();
-    else if (a.target === 'learn') scrollTo(learnY.current);
+    if (a.target === 'learn') scrollTo(learnY.current);
     else router.push(a.target);
   };
 
@@ -234,15 +209,6 @@ export default function LandingScreen() {
           </View>
         </ScrollView>
       </RevealProvider>
-
-      <View pointerEvents="box-none" style={styles.dock}>
-        <Pressable onPress={openMap} accessibilityRole="link" style={styles.dockPill}>
-          <Text style={styles.dockText}>Where are you headed?</Text>
-          <View style={styles.roundBtn}>
-            <Feather name="arrow-right" size={18} color="#FFFFFF" />
-          </View>
-        </Pressable>
-      </View>
     </View>
   );
 }
@@ -262,13 +228,6 @@ const variantStyles = {
     bodyColor: '#F3E8FF',
     ctaColor: '#FFFFFF',
   },
-  plain: {
-    card: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
-    iconColor: colors.primary,
-    titleColor: colors.foreground,
-    bodyColor: colors.muted,
-    ctaColor: colors.primary,
-  },
   outline: {
     card: { backgroundColor: colors.surface, borderWidth: 2, borderColor: brand.gold },
     iconColor: '#B45309',
@@ -280,7 +239,7 @@ const variantStyles = {
 
 const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: colors.background },
-  pageContent: { flexGrow: 1, paddingBottom: 96 },
+  pageContent: { flexGrow: 1 },
   container: {
     width: '100%',
     maxWidth: CONTENT_MAX_WIDTH,
@@ -391,27 +350,4 @@ const styles = StyleSheet.create({
   },
   labLogo: { height: 64, width: 64 * (800 / 313) },
   footerText: { fontFamily: 'Barlow_400Regular', fontSize: 14, color: colors.muted },
-
-  dock: { position: 'absolute', left: 0, right: 0, bottom: 16, alignItems: 'center', paddingHorizontal: spacing.md },
-  dockPill: {
-    width: 520,
-    maxWidth: '100%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-    paddingVertical: 6,
-    paddingRight: 6,
-    paddingLeft: 20,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.full,
-    backgroundColor: colors.surface,
-    shadowColor: colors.primary,
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.18,
-    shadowRadius: 30,
-    elevation: 6,
-  },
-  dockText: { fontFamily: 'Barlow_400Regular', fontSize: 16, color: colors.muted },
 });

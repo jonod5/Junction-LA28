@@ -44,14 +44,14 @@ export function AccountMenu() {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
 
-  // The map keeps its corner clear: survey and sign-in are reached from the
-  // landing page. A signed-in user still gets the avatar menu below.
-  const onMap = pathname === '/home';
+  // The landing and map screens keep this corner clear. A signed-in user
+  // still gets the avatar menu below.
+  const hideButtons = pathname === '/' || pathname === '/home';
 
   // No Supabase project configured — the account half of this menu has
   // nothing to do, but the survey link still needs to show.
   if (!isConfigured || loading) {
-    if (onMap) return null;
+    if (hideButtons) return null;
     return (
       <View style={styles.wrap}>
         <SurveyButton router={router} />
@@ -60,7 +60,7 @@ export function AccountMenu() {
   }
 
   if (!user) {
-    if (onMap) return null;
+    if (hideButtons) return null;
     return (
       <View style={styles.wrap}>
         <SurveyButton router={router} />
