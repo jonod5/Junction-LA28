@@ -1,7 +1,6 @@
-// Top bar for the marketing-style screens (landing, learn-more). The right
+// Top bar for the landing screen. The right
 // side is left empty on purpose: the global AccountMenu (Survey + Sign in /
 // avatar) is docked top-right over every screen and fills that slot.
-import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
@@ -10,38 +9,22 @@ import { brand, colors, spacing } from '@/constants/theme';
 
 export const CONTENT_MAX_WIDTH = 1120;
 
-interface Props {
-  /** Show a back link to the landing screen instead of the home link. */
-  back?: boolean;
-}
-
-export function BrandHeader({ back }: Props) {
+export function BrandHeader() {
   const router = useRouter();
 
   return (
     <View style={styles.bar}>
       <View style={styles.inner}>
-        {back ? (
-          <Pressable
-            onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
-            accessibilityRole="link"
-            style={styles.brand}
-          >
-            <Feather name="arrow-left" size={20} color={colors.foreground} />
-            <Text style={styles.backText}>Back to Junction</Text>
-          </Pressable>
-        ) : (
-          <Pressable
-            onPress={() => router.replace('/')}
-            accessibilityRole="link"
-            accessibilityLabel="Junction home"
-            style={styles.brand}
-          >
-            <JunctionLogo size={32} />
-            <Text style={styles.wordmark}>JUNCTION</Text>
-            <Text style={styles.tag}>LA28</Text>
-          </Pressable>
-        )}
+        <Pressable
+          onPress={() => router.replace('/')}
+          accessibilityRole="link"
+          accessibilityLabel="Junction home"
+          style={styles.brand}
+        >
+          <JunctionLogo size={32} />
+          <Text style={styles.wordmark}>JUNCTION</Text>
+          <Text style={styles.tag}>LA28</Text>
+        </Pressable>
       </View>
     </View>
   );
@@ -79,5 +62,4 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     overflow: 'hidden',
   },
-  backText: { fontFamily: 'Barlow_600SemiBold', fontSize: 16, color: colors.foreground },
 });

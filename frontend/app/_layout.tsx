@@ -77,7 +77,6 @@ function RootLayoutNav() {
                   separately from the v1.5 i18n pass. */}
               <Stack.Screen name="survey" options={{ title: 'Survey' }} />
               <Stack.Screen name="index" options={{ headerShown: false, title: 'Junction' }} />
-              <Stack.Screen name="learn-more" options={{ headerShown: false, title: 'How Junction works' }} />
             </Stack>
             <AccountMenu />
           </ThemeProvider>
