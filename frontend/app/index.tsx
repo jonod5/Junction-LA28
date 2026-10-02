@@ -222,10 +222,11 @@ const variantStyles = {
     ctaColor: '#FFFFFF',
   },
   secondary: {
-    card: { backgroundColor: '#7E22CE' },
+    // Darker than brand.sagebrush so white text stays readable.
+    card: { backgroundColor: '#2F855A' },
     iconColor: '#FFFFFF',
     titleColor: '#FFFFFF',
-    bodyColor: '#F3E8FF',
+    bodyColor: '#E6F6EC',
     ctaColor: '#FFFFFF',
   },
   outline: {
