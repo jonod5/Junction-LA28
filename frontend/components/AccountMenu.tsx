@@ -44,14 +44,17 @@ export function AccountMenu() {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
 
-  // The landing and map screens keep this corner clear. A signed-in user
-  // still gets the avatar menu below.
-  const hideButtons = pathname === '/' || pathname === '/home';
+  // The landing screen has its own survey entry point and the map keeps this
+  // corner clear, so neither shows the survey pill. The landing still offers
+  // sign-in; a signed-in user gets the avatar menu below everywhere.
+  const onLanding = pathname === '/';
+  const onMap = pathname === '/home';
+  const showSurvey = !onLanding && !onMap;
 
   // No Supabase project configured — the account half of this menu has
   // nothing to do, but the survey link still needs to show.
   if (!isConfigured || loading) {
-    if (hideButtons) return null;
+    if (!showSurvey) return null;
     return (
       <View style={styles.wrap}>
         <SurveyButton router={router} />
@@ -60,10 +63,10 @@ export function AccountMenu() {
   }
 
   if (!user) {
-    if (hideButtons) return null;
+    if (onMap) return null;
     return (
       <View style={styles.wrap}>
-        <SurveyButton router={router} />
+        {showSurvey ? <SurveyButton router={router} /> : null}
         <Pressable
           onPress={() => signInWithGoogle()}
           accessibilityRole="button"
