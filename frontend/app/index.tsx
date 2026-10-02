@@ -6,6 +6,7 @@ import React, { useRef } from 'react';
 import {
   Image,
   type LayoutChangeEvent,
+  Linking,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -30,6 +31,7 @@ import { brand, colors, radius, spacing } from '@/constants/theme';
 
 const SCREENSHOT = require('@/assets/images/landing/app-screenshot.png');
 const HUMAN_LAB = require('@/assets/images/landing/human-lab.png');
+const HUMAN_LAB_URL = 'https://sites.google.com/cornell.edu/youngseokim/human-lab';
 
 const EXAMPLE_TRIPS = [
   'LAX → SoFi Stadium',
@@ -202,12 +204,13 @@ export default function LandingScreen() {
 
           <View style={styles.footer}>
             <View style={[styles.container, styles.footerInner]}>
-              <Image
-                source={HUMAN_LAB}
-                style={styles.labLogo}
-                resizeMode="contain"
+              <Pressable
+                onPress={() => Linking.openURL(HUMAN_LAB_URL)}
+                accessibilityRole="link"
                 accessibilityLabel="HUMAN Lab: Human Understanding in Mobility and Automation in Networks"
-              />
+              >
+                <Image source={HUMAN_LAB} style={styles.labLogo} resizeMode="contain" />
+              </Pressable>
               <Text style={styles.footerText}>English · Español · Français · 中文</Text>
             </View>
           </View>
