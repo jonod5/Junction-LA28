@@ -9,7 +9,7 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        // Single-screen app now (home.web.tsx unifies Builder/Map/Routes) —
+        // Single-screen app now (planner.web.tsx unifies Builder/Map/Routes) —
         // no bottom tab bar to switch between, so hide the strip entirely.
         tabBarStyle: { display: 'none' },
         headerStyle: { backgroundColor: colors.primary },
@@ -19,7 +19,7 @@ export default function TabLayout() {
       }}
     >
       <Tabs.Screen
-        name="home"
+        name="planner"
         options={{
           title: 'JUNCTION',
           headerTitle: ({ children, tintColor }) => (
@@ -30,7 +30,7 @@ export default function TabLayout() {
           ),
         }}
       />
-      {/* Native-only fallback screens (web replaces both with home.web.tsx). */}
+      {/* Native-only fallback screens (web replaces both with planner.web.tsx). */}
       <Tabs.Screen name="map" options={{ href: null }} />
       <Tabs.Screen name="routes" options={{ href: null }} />
     </Tabs>

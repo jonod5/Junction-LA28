@@ -20,19 +20,17 @@ function initialsFrom(name: string | undefined, email: string | undefined): stri
   return source.slice(0, 2).toUpperCase();
 }
 
-/** Always-visible entry point to the SP survey — anonymous by design, so
- * unlike everything else in this menu it must not be gated on sign-in or
- * even on Supabase being configured. */
-function SurveyButton({ router }: { router: ReturnType<typeof useRouter> }) {
+/** Back to the landing page, which is the app's home. */
+function HomeButton({ router }: { router: ReturnType<typeof useRouter> }) {
   return (
     <Pressable
-      onPress={() => router.push('/survey')}
-      accessibilityRole="button"
-      accessibilityLabel="Take our travel survey"
-      style={styles.surveyBtn}
+      onPress={() => router.replace('/')}
+      accessibilityRole="link"
+      accessibilityLabel="Home"
+      style={styles.pillBtn}
     >
-      <Feather name="clipboard" size={13} color={colors.primary} />
-      <Text style={styles.surveyBtnText}>Survey</Text>
+      <Feather name="home" size={13} color={colors.primary} />
+      <Text style={styles.pillBtnText}>Home</Text>
     </Pressable>
   );
 }
@@ -44,38 +42,33 @@ export function AccountMenu() {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
 
-  // The landing screen has its own survey entry point and the map keeps this
-  // corner clear, so neither shows the survey pill. The landing still offers
-  // sign-in; a signed-in user gets the avatar menu below everywhere.
+  // The survey is reached only from the landing page's card, so it has no
+  // button here. Every other screen gets a Home button back to the landing
+  // page; the map keeps its corner otherwise clear (no sign-in pill).
   const onLanding = pathname === '/';
-  const onMap = pathname === '/home';
-  const showSurvey = !onLanding && !onMap;
+  const onMap = pathname === '/planner';
+  const home = onLanding ? null : <HomeButton router={router} />;
 
-  // No Supabase project configured — the account half of this menu has
-  // nothing to do, but the survey link still needs to show.
+  // No Supabase project configured — only navigation to show.
   if (!isConfigured || loading) {
-    if (!showSurvey) return null;
-    return (
-      <View style={styles.wrap}>
-        <SurveyButton router={router} />
-      </View>
-    );
+    return home ? <View style={styles.wrap}>{home}</View> : null;
   }
 
   if (!user) {
-    if (onMap) return null;
     return (
       <View style={styles.wrap}>
-        {showSurvey ? <SurveyButton router={router} /> : null}
-        <Pressable
-          onPress={() => signInWithGoogle()}
-          accessibilityRole="button"
-          accessibilityLabel={t('common.signIn')}
-          style={styles.signInBtn}
-        >
-          <Feather name="user" size={13} color={colors.primary} />
-          <Text style={styles.signInText}>{t('common.signIn')}</Text>
-        </Pressable>
+        {home}
+        {onMap ? null : (
+          <Pressable
+            onPress={() => signInWithGoogle()}
+            accessibilityRole="button"
+            accessibilityLabel={t('common.signIn')}
+            style={styles.pillBtn}
+          >
+            <Feather name="user" size={13} color={colors.primary} />
+            <Text style={styles.pillBtnText}>{t('common.signIn')}</Text>
+          </Pressable>
+        )}
       </View>
     );
   }
@@ -92,7 +85,7 @@ export function AccountMenu() {
 
   return (
     <View style={styles.wrap}>
-      <SurveyButton router={router} />
+      {home}
       <Pressable
         onPress={() => setOpen((v) => !v)}
         accessibilityRole="button"
@@ -160,18 +153,12 @@ export function AccountMenu() {
 
 const styles = StyleSheet.create({
   wrap: { position: 'absolute', top: 12, right: 12, zIndex: 200, flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
-  surveyBtn: {
+  pillBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     backgroundColor: colors.surface, borderRadius: radius.full,
     paddingVertical: 8, paddingHorizontal: spacing.sm, ...shadow.sm,
   },
-  surveyBtnText: { fontFamily: 'Barlow_600SemiBold', fontSize: 13, color: colors.primary },
-  signInBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: colors.surface, borderRadius: radius.full,
-    paddingVertical: 8, paddingHorizontal: spacing.sm, ...shadow.sm,
-  },
-  signInText: { fontFamily: 'Barlow_600SemiBold', fontSize: 13, color: colors.primary },
+  pillBtnText: { fontFamily: 'Barlow_600SemiBold', fontSize: 13, color: colors.primary },
   avatarBtn: { borderRadius: radius.full, ...shadow.sm },
   avatarImg: { width: 40, height: 40, borderRadius: 20, borderWidth: 2, borderColor: colors.surface },
   avatarFallback: {

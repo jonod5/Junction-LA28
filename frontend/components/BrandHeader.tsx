@@ -1,5 +1,5 @@
 // Top bar for the landing screen. The right
-// side is left empty on purpose: the global AccountMenu (Survey + Sign in /
+// side is left empty on purpose: the global AccountMenu (Sign in /
 // avatar) is docked top-right over every screen and fills that slot.
 import { useRouter } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';

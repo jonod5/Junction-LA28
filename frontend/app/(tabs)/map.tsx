@@ -66,7 +66,7 @@ export default function MapScreen() {
           <Text style={styles.emptyTitle}>No venues yet</Text>
           <Text style={styles.emptyHint}>Add venues in the Planner tab first</Text>
           <Pressable
-            onPress={() => router.push('/home')}
+            onPress={() => router.push('/planner')}
             accessibilityRole="button"
             style={({ pressed }) => [styles.goBtn, pressed && styles.goBtnPressed]}
           >

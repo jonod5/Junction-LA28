@@ -66,7 +66,7 @@ export default function ItinerariesScreen() {
     setBusyId(it.id);
     const ok = await hydrateFromSnapshot(it.saved_plan);
     setBusyId(null);
-    if (ok) router.replace('/home');
+    if (ok) router.replace('/planner');
   };
 
   const togglePin = async (it: Itinerary) => {

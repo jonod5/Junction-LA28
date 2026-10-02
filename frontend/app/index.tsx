@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 
 import { BrandHeader, CONTENT_MAX_WIDTH } from '@/components/BrandHeader';
+import { useClientOnlyValue } from '@/components/useClientOnlyValue';
 import { LearnMoreSections, type SectionKey } from '@/components/landing/LearnMoreSections';
 import {
   BobArrow,
@@ -51,7 +52,7 @@ type ActionCard = {
 };
 
 const MAP: ActionCard = {
-  target: '/home',
+  target: '/planner',
   icon: 'map',
   title: 'Open the map',
   body: 'Compare routes to any venue.',
@@ -81,7 +82,10 @@ export default function LandingScreen() {
   const router = useRouter();
   const actions = [MAP, SURVEY, LEARN_MORE];
   const { width } = useWindowDimensions();
-  const wide = width >= 860;
+  // The web build pre-renders with no window, and hydration keeps those
+  // styles; only switch to the wide layout once running in the browser.
+  const hydrated = useClientOnlyValue(false, true);
+  const wide = hydrated && width >= 860;
 
   const scrollRef = useRef<ScrollView>(null);
   const reveal = useRevealHost();
@@ -91,7 +95,7 @@ export default function LandingScreen() {
   const scrollTo = (y: number) =>
     scrollRef.current?.scrollTo({ y: Math.max(y - JUMP_OFFSET, 0), animated: true });
   const jumpToSection = (key: SectionKey) => scrollTo(learnY.current + sectionY.current[key]);
-  const openMap = () => router.push('/home');
+  const openMap = () => router.push('/planner');
 
   const onAction = (a: ActionCard) => {
     if (a.target === 'learn') scrollTo(learnY.current);
